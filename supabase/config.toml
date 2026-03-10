@@ -1,0 +1,4 @@
+project_id = "awoxwymvuvxwtjiiqbpi"
+
+[functions.trail-chat]
+verify_jwt = false

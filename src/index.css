@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 160 10% 6%;
+    --foreground: 140 20% 92%;
+
+    --card: 160 12% 10%;
+    --card-foreground: 140 20% 92%;
+
+    --popover: 160 12% 10%;
+    --popover-foreground: 140 20% 92%;
+
+    --primary: 152 60% 42%;
+    --primary-foreground: 160 10% 6%;
+
+    --secondary: 160 15% 16%;
+    --secondary-foreground: 140 20% 92%;
+
+    --muted: 160 10% 14%;
+    --muted-foreground: 150 10% 55%;
+
+    --accent: 40 90% 55%;
+    --accent-foreground: 160 10% 6%;
+
+    --destructive: 0 72% 50%;
+    --destructive-foreground: 140 20% 92%;
+
+    --border: 155 15% 18%;
+    --input: 155 15% 18%;
+    --ring: 152 60% 42%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 160 12% 8%;
+    --sidebar-foreground: 140 20% 92%;
+    --sidebar-primary: 152 60% 42%;
+    --sidebar-primary-foreground: 160 10% 6%;
+    --sidebar-accent: 160 15% 14%;
+    --sidebar-accent-foreground: 140 20% 92%;
+    --sidebar-border: 155 15% 18%;
+    --sidebar-ring: 152 60% 42%;
+
+    --sky: 200 80% 55%;
+    --sky-foreground: 160 10% 6%;
+    --warning: 40 90% 55%;
+    --warning-foreground: 160 10% 6%;
+    --success: 152 60% 42%;
+    --success-foreground: 160 10% 6%;
+
+    --glass: 160 12% 12% / 0.6;
+    --glass-border: 155 20% 25% / 0.3;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+}
+
+@layer utilities {
+  .glass-card {
+    @apply bg-card/60 backdrop-blur-xl border border-border/30 shadow-lg;
+  }
+  .glass-card-strong {
+    @apply bg-card/80 backdrop-blur-2xl border border-border/40 shadow-xl;
+  }
+  .text-gradient {
+    @apply bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent;
+  }
+  .glow-primary {
+    box-shadow: 0 0 30px hsl(152 60% 42% / 0.15), 0 0 60px hsl(152 60% 42% / 0.05);
+  }
+  .glow-accent {
+    box-shadow: 0 0 30px hsl(40 90% 55% / 0.15), 0 0 60px hsl(40 90% 55% / 0.05);
+  }
+}
+
+/* Leaflet overrides for dark theme */
+.leaflet-container {
+  background: hsl(160 10% 6%) !important;
+}
+.leaflet-control-zoom a {
+  background: hsl(160 12% 10% / 0.9) !important;
+  color: hsl(140 20% 92%) !important;
+  border-color: hsl(155 15% 18%) !important;
+}
+.leaflet-popup-content-wrapper {
+  background: hsl(160 12% 10% / 0.95) !important;
+  color: hsl(140 20% 92%) !important;
+  border-radius: 0.75rem !important;
+  backdrop-filter: blur(20px) !important;
+}
+.leaflet-popup-tip {
+  background: hsl(160 12% 10% / 0.95) !important;
+}
