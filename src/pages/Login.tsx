@@ -4,8 +4,9 @@ import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Mountain, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import logo from '@/assets/logo.png';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -37,7 +38,7 @@ export default function Login() {
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_hsl(152_60%_42%/0.06)_0%,_transparent_50%)]" />
       <div className="w-full max-w-md relative z-10">
         <div className="text-center mb-8">
-          <Mountain className="h-10 w-10 text-primary mx-auto mb-4" />
+          <img src={logo} alt="Mt. Kalisungan logo" className="h-12 w-12 rounded-full object-cover mx-auto mb-4 bg-white/5" />
           <h1 className="text-2xl font-bold">Welcome Back</h1>
           <p className="text-muted-foreground text-sm mt-1">Sign in to Mt. Kalisungan Tracker</p>
         </div>

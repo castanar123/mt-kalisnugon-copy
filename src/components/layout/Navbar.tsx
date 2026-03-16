@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Mountain, Map, MessageSquare, CalendarCheck, LayoutDashboard, LogOut, Menu, X } from 'lucide-react';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import logo from '@/assets/logo.png';
 
 export default function Navbar() {
   const { user, role, signOut } = useAuth();
@@ -34,7 +35,12 @@ export default function Navbar() {
     <nav className="fixed top-0 left-0 right-0 z-50 glass-card-strong border-b border-border/30">
       <div className="container mx-auto flex items-center justify-between h-16 px-4">
         <Link to="/" className="flex items-center gap-2 group">
-          <Mountain className="h-7 w-7 text-primary group-hover:scale-110 transition-transform" />
+          <img
+            src={logo}
+            alt="Mt. Kalisungan logo"
+            className="h-8 w-8 rounded-full object-cover bg-white/5 group-hover:scale-110 transition-transform"
+            loading="eager"
+          />
           <span className="text-lg font-bold text-gradient">Mt. Kalisungan</span>
         </Link>
 

@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Bot, Send, Loader2, Mountain, Sparkles, WifiOff } from 'lucide-react';
+import { Bot, Send, Loader2, Sparkles, WifiOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import type { ChatMessage } from '@/types';
 import { getOfflineAnswer, learnFromResponse, getCacheSize } from '@/lib/trail-offline-kb';
+import logo from '@/assets/logo.png';
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/trail-chat-rag`;
 const QUICK_QUESTIONS = [
@@ -151,7 +152,7 @@ export default function ChatPage() {
         <div className="container max-w-3xl mx-auto space-y-4">
           {messages.length === 0 && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-12">
-              <Mountain className="h-16 w-16 text-primary/30 mx-auto mb-4" />
+              <img src={logo} alt="Mt. Kalisungan logo" className="h-16 w-16 rounded-full object-cover mx-auto mb-4 bg-white/5" />
               <h2 className="text-xl font-bold mb-2">Ask About Mount Kalisungan</h2>
               <p className="text-muted-foreground text-sm mb-8">Get trail info, safety tips, weather updates, and more.</p>
               <div className="flex flex-wrap gap-2 justify-center">
