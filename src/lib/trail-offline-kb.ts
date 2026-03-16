@@ -202,7 +202,7 @@ Afternoon thunderstorms can occur year-round.`,
 
 - Signal is **weak to none** on most of the trail
 - Best signal: trailhead and some ridge sections
-- 📱 Download offline maps before your hike (Google Maps offline or AllTrails)
+- 📱 Download offline maps before your hike (offline maps or AllTrails)
 - GPS works even without signal — keep location services on
 - Bring a power bank — GPS drains battery fast
 - Consider a two-way radio for group hikes`,
@@ -335,7 +335,7 @@ Afternoon thunderstorms can occur year-round.`,
 🚗 **By Private Car:**
 - From Manila: ~2.5–3 hours via SLEX → Calauan exit
 - Parking available at the trailhead (limited spots, arrive early)
-- Waze/Google Maps: Search "Mt. Kalisungan Trailhead, Calauan, Laguna"
+- Navigation apps: Search "Mt. Kalisungan Trailhead, Calauan, Laguna"
 
 🚌 **By Public Transport:**
 - Bus: Take a Calauan/Santa Cruz-bound bus from Buendia or Cubao
