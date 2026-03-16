@@ -8,7 +8,7 @@ import type { ChatMessage } from '@/types';
 import { getOfflineAnswer, learnFromResponse, getCacheSize } from '@/lib/trail-offline-kb';
 import logo from '@/assets/logo.png';
 
-const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/trail-chat-rag`;
+const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/trail-chat`;
 const QUICK_QUESTIONS = [
   'What trails are available on Mt. Kalisungan?',
   'What should I bring for a day hike?',
