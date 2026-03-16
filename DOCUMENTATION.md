@@ -57,7 +57,7 @@ This is a **thesis project (2026)** built to demonstrate how modern web technolo
 | **PostgreSQL** | Relational database |
 | **Row Level Security (RLS)** | Data access control |
 | **Deno Edge Functions** | Serverless backend logic |
-| **AI Chatbot Gateway** | AI model access (Gemini)  |
+| **AI Chatbot Gateway** | Cloud LLM access (provider-configurable) |
 
 ---
 
@@ -90,7 +90,7 @@ This is a **thesis project (2026)** built to demonstrate how modern web technolo
 │                          ┌──────────┴─────┐      │
 │                          │ AI Chat Bot    │      │
 │                          │ Gateway        │      │
-│                          │ (Gemini Flash) │      │
+│                          │ (Cloud LLM)    │      │
 │                          └────────────────┘      │
 └──────────────────────────────────────────────────┘
 ```
@@ -113,7 +113,7 @@ This is a **thesis project (2026)** built to demonstrate how modern web technolo
 - **Offline tile caching** via Browser Cache API
 
 ### 🤖 AI Trail Assistant
-- Powered by **Google Gemini 3 Flash**  AI Gateway
+- Powered by a **cloud LLM** via the app's AI gateway
 - **Streaming responses** with real-time text rendering
 - Expert knowledge about Mt. Kalisungan: trails, safety, flora/fauna, gear, weather
 - **Quick question prompts** for common queries
@@ -214,7 +214,7 @@ Provides: current user object, resolved role, loading state, and auth methods.
 
 ### Backend Edge Function: `trail-chat`
 - **Endpoint**: `{SUPABASE_URL}/functions/v1/trail-chat`
-- **Model**: `google/gemini-3-flash-preview`
+- **Model**: configurable via environment (see `AI_MODEL`)
 - **Streaming**: Server-Sent Events (SSE) for real-time response delivery
 - **System prompt**: Comprehensive Mt. Kalisungan expert knowledge including:
   - Trail details (3 routes with difficulty/distance/elevation)
@@ -288,7 +288,9 @@ bun run dev
 ### Edge Function Secrets
 | Secret | Description |
 |---|---|
-| `AI_API_KEY` | AI Gateway authentication key (auto-configured) |
+| `AI_API_KEY` | AI gateway authentication key |
+| `AI_GATEWAY_URL` | (Optional) AI gateway base URL |
+| `AI_MODEL` | (Optional) model identifier |
 
 ---
 

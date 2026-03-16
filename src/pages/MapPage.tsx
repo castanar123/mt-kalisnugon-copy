@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Polyline, Polygon, Marker, Popup, useMap, Circ
 import L from 'leaflet';
 import { MT_KALISUNGAN_CENTER, DEFAULT_ZOOM, TRAILS, POI, ZONES, haversineDistance, distanceToTrail } from '@/lib/map-data';
 import { Button } from '@/components/ui/button';
-import { Locate } from 'lucide-react';
+import { ChevronDown, ChevronUp, Locate, Pause, Play, Wifi, WifiOff, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import ElevationProfile from '@/components/map/ElevationProfile';
 import MapLegend from '@/components/map/MapLegend';
@@ -39,7 +39,13 @@ const poiIcons: Record<string, L.DivIcon> = {
 function LocateControl() {
   const map = useMap();
   return (
-    <Button size="icon" variant="outline" className="absolute bottom-4 right-4 z-[1000] glass-card" onClick={() => map.locate({ setView: true, maxZoom: 17 })}>
+    <Button
+      size="icon"
+      variant="outline"
+      className="absolute bottom-24 md:bottom-4 right-4 z-[1000] glass-card"
+      onClick={() => map.locate({ setView: true, maxZoom: 17 })}
+      aria-label="Locate me"
+    >
       <Locate className="h-4 w-4" />
     </Button>
   );
@@ -69,6 +75,7 @@ export default function MapPage() {
   const [selectedTrail, setSelectedTrail] = useState(0);
   const [offlineReady, setOfflineReady] = useState(false);
   const [userTrailProgress, setUserTrailProgress] = useState<number | undefined>(undefined);
+  const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const watchRef = useRef<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -141,23 +148,32 @@ export default function MapPage() {
   };
 
   const currentTrail = TRAILS[selectedTrail];
+  const pace = elapsed > 0 && distance > 0 ? elapsed / 60 / distance : 0;
+
+  useEffect(() => {
+    // keep the map clean by default on mobile when switching trails
+    setMobileControlsOpen(false);
+  }, [selectedTrail]);
 
   return (
     <div className="h-screen pt-16 flex flex-col">
-      <TrailStats
-        distance={distance}
-        elapsed={elapsed}
-        selectedTrail={selectedTrail}
-        offTrail={offTrail}
-        tracking={tracking}
-        offlineReady={offlineReady}
-        onStartTracking={startTracking}
-        onStopTracking={stopTracking}
-        onOfflineCache={handleOfflineCache}
-      />
+      {/* Desktop/tablet top bar */}
+      <div className="hidden md:block">
+        <TrailStats
+          distance={distance}
+          elapsed={elapsed}
+          selectedTrail={selectedTrail}
+          offTrail={offTrail}
+          tracking={tracking}
+          offlineReady={offlineReady}
+          onStartTracking={startTracking}
+          onStopTracking={stopTracking}
+          onOfflineCache={handleOfflineCache}
+        />
+      </div>
 
-      {/* Trail selector */}
-      <div className="glass-card border-b border-border/30 px-4 py-2 flex items-center gap-2 overflow-x-auto">
+      {/* Desktop/tablet trail selector */}
+      <div className="hidden md:flex glass-card border-b border-border/30 px-4 py-2 items-center gap-2 overflow-x-auto">
         {TRAILS.map((t, i) => (
           <button
             key={t.name}
@@ -268,16 +284,126 @@ export default function MapPage() {
         </div>
 
         <MapLegend />
-      </div>
 
-      {/* Elevation Profile */}
-      <div className="px-4 py-3 border-t border-border/30">
-        <ElevationProfile
-          trailPath={currentTrail.path}
-          trailName={currentTrail.name}
-          trailColor={currentTrail.color}
-          userProgress={userTrailProgress}
-        />
+        {/* Elevation Profile (collapsible overlay) */}
+        <div className="absolute bottom-[5.5rem] md:bottom-4 left-4 right-4 z-[1000]">
+          <ElevationProfile
+            trailPath={currentTrail.path}
+            trailName={currentTrail.name}
+            trailColor={currentTrail.color}
+            userProgress={userTrailProgress}
+          />
+        </div>
+
+        {/* Mobile bottom controls (collapsible) */}
+        <div className="md:hidden absolute bottom-4 left-4 right-4 z-[1000]">
+          <div className="glass-card-strong rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setMobileControlsOpen((v) => !v)}
+              className="w-full px-3 py-2 flex items-center gap-3 hover:bg-white/5 transition-colors"
+              aria-expanded={mobileControlsOpen}
+              aria-label={mobileControlsOpen ? 'Collapse controls' : 'Expand controls'}
+            >
+              <div className="flex-1 min-w-0 text-left">
+                <div className="flex items-center gap-2">
+                  <div className="text-sm font-semibold truncate" style={{ color: currentTrail.color }}>
+                    {currentTrail.name}
+                  </div>
+                  {offTrail && (
+                    <div className="inline-flex items-center gap-1 text-destructive text-xs animate-pulse">
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      <span>Off</span>
+                    </div>
+                  )}
+                </div>
+                <div className="text-[11px] text-muted-foreground flex gap-3">
+                  <span>
+                    <span className="text-foreground font-semibold">{distance.toFixed(2)}</span> km
+                  </span>
+                  <span>
+                    <span className="text-foreground font-semibold">{String(Math.floor(elapsed / 60)).padStart(2, '0')}:{String(elapsed % 60).padStart(2, '0')}</span>
+                  </span>
+                  <span>
+                    <span className="text-foreground font-semibold">{pace > 0 ? pace.toFixed(1) : '--'}</span> min/km
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1 shrink-0">
+                <Button
+                  size="icon"
+                  variant="outline"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleOfflineCache(); }}
+                  aria-label={offlineReady ? 'Offline cached' : 'Save offline'}
+                >
+                  {offlineReady ? <WifiOff className="h-4 w-4" /> : <Wifi className="h-4 w-4" />}
+                </Button>
+                {tracking ? (
+                  <Button
+                    size="icon"
+                    variant="destructive"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); stopTracking(); }}
+                    aria-label="Stop tracking"
+                  >
+                    <Pause className="h-4 w-4" />
+                  </Button>
+                ) : (
+                  <Button
+                    size="icon"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); startTracking(); }}
+                    aria-label="Start hike"
+                  >
+                    <Play className="h-4 w-4" />
+                  </Button>
+                )}
+                <div className="text-muted-foreground pl-1">
+                  {mobileControlsOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+                </div>
+              </div>
+            </button>
+
+            {mobileControlsOpen && (
+              <div className="border-t border-border/30 px-3 py-2 space-y-2">
+                <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                  {TRAILS.map((t, i) => (
+                    <button
+                      key={t.name}
+                      onClick={() => setSelectedTrail(i)}
+                      className={`whitespace-nowrap px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                        selectedTrail === i ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                      style={selectedTrail === i ? { backgroundColor: t.color } : {}}
+                    >
+                      {t.name}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>{currentTrail.distance} • {currentTrail.elevation}</span>
+                  <span className="capitalize">{currentTrail.difficulty}</span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="outline" onClick={handleOfflineCache} className="gap-1 flex-1">
+                    {offlineReady ? <WifiOff className="h-3 w-3" /> : <Wifi className="h-3 w-3" />}
+                    {offlineReady ? 'Cached' : 'Save Offline'}
+                  </Button>
+                  {tracking ? (
+                    <Button size="sm" variant="destructive" onClick={stopTracking} className="gap-1 flex-1">
+                      <Pause className="h-3 w-3" /> Stop
+                    </Button>
+                  ) : (
+                    <Button size="sm" onClick={startTracking} className="gap-1 flex-1">
+                      <Play className="h-3 w-3" /> Start
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

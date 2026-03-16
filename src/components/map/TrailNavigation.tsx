@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { Navigation, MapPin, ArrowUp, ArrowUpRight, ArrowRight, ArrowDownRight, ArrowDown, ArrowDownLeft, ArrowLeft, ArrowUpLeft, Flag } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Navigation, MapPin, ArrowUp, ArrowUpRight, ArrowRight, ArrowDownRight, ArrowDown, ArrowDownLeft, ArrowLeft, ArrowUpLeft, Flag, ChevronDown, ChevronUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { LatLngTuple } from 'leaflet';
 
@@ -63,6 +63,8 @@ export default function TrailNavigation({
   tracking,
   userTrailProgress,
 }: TrailNavigationProps) {
+  const [collapsed, setCollapsed] = useState(true);
+
   const navData = useMemo(() => {
     if (!userPos || userTrailProgress === undefined || trailPath.length < 2) return null;
 
@@ -126,6 +128,11 @@ export default function TrailNavigation({
     };
   }, [userPos, userTrailProgress, trailPath]);
 
+  // Keep UI tidy when starting/stopping tracking or switching trails.
+  useEffect(() => {
+    setCollapsed(true);
+  }, [tracking, trailName]);
+
   if (!tracking || !navData) {
     return (
       <div className="glass-card rounded-lg p-3 text-center text-sm text-muted-foreground">
@@ -136,6 +143,7 @@ export default function TrailNavigation({
   }
 
   const { distToNext, direction, turnInstruction, remainingDist, progress, isAtEnd, waypoints } = navData;
+  const distLabel = distToNext < 0.1 ? `${Math.round(distToNext * 1000)}m` : `${distToNext.toFixed(2)}km`;
 
   return (
     <AnimatePresence mode="wait">
@@ -144,8 +152,37 @@ export default function TrailNavigation({
         initial={{ opacity: 0, x: 10 }}
         animate={{ opacity: 1, x: 0 }}
         exit={{ opacity: 0, x: -10 }}
-        className="glass-card rounded-lg p-3 space-y-3"
+        className="glass-card rounded-lg overflow-hidden"
       >
+        {/* Collapsible header */}
+        <button
+          type="button"
+          onClick={() => setCollapsed((v) => !v)}
+          className="w-full p-3 flex items-center gap-3 hover:bg-white/5 transition-colors"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? 'Expand navigation details' : 'Collapse navigation details'}
+        >
+          <div
+            className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+            style={{ backgroundColor: `${trailColor}20`, color: trailColor }}
+          >
+            {isAtEnd ? <Flag className="h-5 w-5" /> : <direction.Icon className="h-5 w-5" />}
+          </div>
+          <div className="flex-1 min-w-0 text-left">
+            <div className="text-sm font-bold truncate">
+              {isAtEnd ? 'You have reached the end!' : turnInstruction}
+            </div>
+            <div className="text-xs text-muted-foreground truncate">
+              {isAtEnd ? `${trailName} complete` : `${direction.label} • ${distLabel} to next`}
+            </div>
+          </div>
+          <div className="shrink-0 text-muted-foreground">
+            {collapsed ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </div>
+        </button>
+
+        {!collapsed && (
+          <div className="px-3 pb-3 space-y-3">
         {/* Main turn instruction */}
         <div className="flex items-center gap-3">
           <div
@@ -165,7 +202,7 @@ export default function TrailNavigation({
             <div className="text-xs text-muted-foreground">
               {isAtEnd
                 ? `${trailName} complete`
-                : `${direction.label} — ${distToNext < 0.1 ? `${Math.round(distToNext * 1000)}m` : `${distToNext.toFixed(2)}km`} to next waypoint`}
+                : `${direction.label} — ${distLabel} to next waypoint`}
             </div>
           </div>
         </div>
@@ -202,6 +239,8 @@ export default function TrailNavigation({
                 </span>
               </div>
             ))}
+          </div>
+        )}
           </div>
         )}
       </motion.div>
