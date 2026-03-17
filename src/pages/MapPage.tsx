@@ -12,6 +12,7 @@ import TrailNavigation from '@/components/map/TrailNavigation';
 import MapCompass from '@/components/map/MapCompass';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useAuth } from '@/hooks/useAuth';
+import { usePedometer } from '@/hooks/usePedometer';
 import 'leaflet/dist/leaflet.css';
 
 // Fix default marker icons
@@ -157,17 +158,15 @@ export default function MapPage() {
   const [legendOpen, setLegendOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isAccuracyMode, setIsAccuracyMode] = useState(false);
-  const [isPhysicallyMoving, setIsPhysicallyMoving] = useState(false);
-  const isMovingRef = useRef(false);
-  const motionHistoryRef = useRef<number[]>([]);
-  const [stepCount, setStepCount] = useState(0);
-  const stepDetectionState = useRef({ lastPeak: 0, isPeak: false });
   const [recordedPoints, setRecordedPoints] = useState<RecordedPoint[]>([]);
   const recordWatchRef = useRef<number | null>(null);
   const watchRef = useRef<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { role } = useAuth();
   const isRanger = role === 'ranger';
+
+  // Advanced Pedometer Hook
+  const { stepCount, isMoving: isPhysicallyMoving, start: startPedometer, stop: stopPedometer, reset: resetPedometer } = usePedometer();
 
   // Kalman Filter State for high-accuracy movement tracking
   const kalmanStateRef = useRef<{
@@ -248,8 +247,8 @@ export default function MapPage() {
     setDistance(0);
     setElapsed(0);
     setCurrentSpeed(0);
-    setStepCount(0);
-    stepDetectionState.current = { lastPeak: 0, isPeak: false };
+    resetPedometer();
+    startPedometer();
     kalmanStateRef.current = null; // Reset Kalman filter
     timerRef.current = setInterval(() => setElapsed((s) => s + 1), 1000);
 
@@ -289,7 +288,7 @@ export default function MapPage() {
             
             // Movement threshold + Motion Aware: Only record if speed > 0 AND physically moving
             // or if it's a very significant jump (to catch vehicles)
-            if ((d > 0.003 && rawSpeed > 0 && isMovingRef.current) || d > 0.05) {
+            if ((d > 0.003 && rawSpeed > 0 && isPhysicallyMoving) || d > 0.05) {
               setDistance((old) => old + d);
               return [...prev, newPos];
             }
@@ -318,9 +317,10 @@ export default function MapPage() {
 
   const stopTracking = useCallback(() => {
     setTracking(false);
+    stopPedometer();
     if (watchRef.current !== null) navigator.geolocation.clearWatch(watchRef.current);
     if (timerRef.current) clearInterval(timerRef.current);
-  }, []);
+  }, [stopPedometer]);
 
   useEffect(() => () => { stopTracking(); }, [stopTracking]);
 
@@ -361,15 +361,15 @@ export default function MapPage() {
       return;
     }
     setRecordedPoints([]);
-    setStepCount(0);
-    stepDetectionState.current = { lastPeak: 0, isPeak: false };
+    resetPedometer();
+    startPedometer();
     kalmanStateRef.current = null; // Reset Kalman filter
     setIsRecording(true);
 
     recordWatchRef.current = navigator.geolocation.watchPosition(
       (pos) => {
-        // Stricter filtering for recording: use isMovingRef.current
-        const isStationary = (pos.coords.speed != null && pos.coords.speed < 0.3) || !isMovingRef.current;
+        // Stricter filtering for recording: use isPhysicallyMoving
+        const isStationary = (pos.coords.speed != null && pos.coords.speed < 0.3) || !isPhysicallyMoving;
         const isPoorAccuracy = pos.coords.accuracy > 25;
         
         if (isStationary && isPoorAccuracy) return;
@@ -394,7 +394,7 @@ export default function MapPage() {
 
           // Increased threshold to 3.0 meters for recording stability
           // Requires physical movement to be recorded
-          if (dist > 3.0 && isMovingRef.current) {
+          if (dist > 3.0 && isPhysicallyMoving) {
             return [...prev, filtered];
           }
 
@@ -413,15 +413,16 @@ export default function MapPage() {
       },
       { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
     );
-  }, [applyKalmanFilter]);
+  }, [applyKalmanFilter, isPhysicallyMoving, resetPedometer, startPedometer]);
 
   const stopRecording = useCallback(() => {
     setIsRecording(false);
+    stopPedometer();
     if (recordWatchRef.current != null) {
       navigator.geolocation.clearWatch(recordWatchRef.current);
       recordWatchRef.current = null;
     }
-  }, []);
+  }, [stopPedometer]);
 
   useEffect(() => {
     return () => {
@@ -451,70 +452,6 @@ export default function MapPage() {
       startRecording();
     }
   };
-
-  /**
-   * Motion detection logic similar to pedometer apps
-   * Monitors accelerometer to detect physical movement
-   */
-  useEffect(() => {
-    if (!tracking && !isRecording) {
-      setIsPhysicallyMoving(false);
-      return;
-    }
-
-    const handleMotion = (event: DeviceMotionEvent) => {
-      const acc = event.acceleration;
-      if (!acc || !acc.x || !acc.y || !acc.z) return;
-
-      const magnitude = Math.sqrt(acc.x ** 2 + acc.y ** 2 + acc.z ** 2);
-      
-      // --- Motion detection for GPS gating (Pacer strategy) ---
-      motionHistoryRef.current = [...motionHistoryRef.current.slice(-15), magnitude];
-      if (motionHistoryRef.current.length > 5) {
-        const avg = motionHistoryRef.current.reduce((a, b) => a + b, 0) / motionHistoryRef.current.length;
-        const variance = motionHistoryRef.current.reduce((a, b) => a + (b - avg) ** 2, 0) / motionHistoryRef.current.length;
-        const moving = variance > 0.3; // Adjusted for more sensitivity
-        setIsPhysicallyMoving(moving);
-        isMovingRef.current = moving;
-      }
-
-      // --- Pedometer Step Counting Logic ---
-      const now = Date.now();
-      const HIGH_THRESHOLD = 11.0; // m/s^2, walking creates peaks > 11
-      const LOW_THRESHOLD = 9.0;  // m/s^2, valleys between steps
-      const MIN_STEP_INTERVAL = 300; // ms, prevents counting noise as multiple steps
-
-      const state = stepDetectionState.current;
-
-      if (magnitude > HIGH_THRESHOLD && !state.isPeak) {
-        // Potential step peak detected
-        state.isPeak = true;
-      } else if (magnitude < LOW_THRESHOLD && state.isPeak) {
-        // Step confirmed by transitioning from peak to valley
-        if (now - state.lastPeak > MIN_STEP_INTERVAL) {
-          setStepCount(s => s + 1);
-          state.lastPeak = now;
-        }
-        state.isPeak = false;
-      }
-    };
-
-    // Request permission for motion sensors on iOS 13.3+
-    if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
-      (DeviceMotionEvent as any).requestPermission()
-        .then((permissionState: string) => {
-          if (permissionState === 'granted') {
-            window.addEventListener('devicemotion', handleMotion);
-          }
-        })
-        .catch(console.error);
-    } else {
-      // Handle non-iOS 13.3+ devices
-      window.addEventListener('devicemotion', handleMotion);
-    }
-
-    return () => window.removeEventListener('devicemotion', handleMotion);
-  }, [tracking, isRecording]);
 
   const recordDistanceMeters = useMemo(() => {
     if (recordedPoints.length < 2) return 0;
