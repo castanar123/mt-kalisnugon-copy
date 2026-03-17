@@ -53,7 +53,7 @@ function LocateControl({
       size="icon"
       variant="outline"
       className={className ?? `absolute right-4 z-[1000] glass-card ${bottomClassName ?? 'bottom-[7.5rem]'} md:bottom-4`}
-      onClick={() => map?.locate({ setView: true, maxZoom: 17 })}
+      onClick={() => map?.locate({ setView: true, maxZoom: 17, timeout: 30000, enableHighAccuracy: true })}
       disabled={!map}
       aria-label="Locate me"
     >
@@ -310,10 +310,17 @@ export default function MapPage() {
           setOffTrail(false);
         }
       },
-      (err) => toast.error(`GPS Error: ${err.message}`),
-      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+      (err) => {
+        // Only show toast for non-timeout errors, or if it's the first few timeouts
+        if (err.code !== 3) {
+          toast.error(`GPS Error: ${err.message}`);
+        } else {
+          console.warn('GPS Timeout: Still waiting for signal...');
+        }
+      },
+      { enableHighAccuracy: true, maximumAge: 3000, timeout: 30000 }
     );
-  }, [selectedTrail, isAccuracyMode, applyKalmanFilter]);
+  }, [selectedTrail, isAccuracyMode, applyKalmanFilter, resetPedometer, startPedometer]);
 
   const stopTracking = useCallback(() => {
     setTracking(false);
@@ -409,9 +416,13 @@ export default function MapPage() {
         });
       },
       (err) => {
-        toast.error(`Recording Error: ${err.message}`);
+        if (err.code !== 3) {
+          toast.error(`Recording Error: ${err.message}`);
+        } else {
+          console.warn('Recording GPS Timeout: Still waiting...');
+        }
       },
-      { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
+      { enableHighAccuracy: true, maximumAge: 3000, timeout: 30000 }
     );
   }, [applyKalmanFilter, isPhysicallyMoving, resetPedometer, startPedometer]);
 
