@@ -157,6 +157,9 @@ export default function MapPage() {
   const [legendOpen, setLegendOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isAccuracyMode, setIsAccuracyMode] = useState(false);
+  const [isPhysicallyMoving, setIsPhysicallyMoving] = useState(false);
+  const isMovingRef = useRef(false);
+  const motionHistoryRef = useRef<number[]>([]);
   const [recordedPoints, setRecordedPoints] = useState<RecordedPoint[]>([]);
   const recordWatchRef = useRef<number | null>(null);
   const watchRef = useRef<number | null>(null);
@@ -280,9 +283,9 @@ export default function MapPage() {
             const last = prev[prev.length - 1];
             const d = haversineDistance(last[0], last[1], newPos[0], newPos[1]);
             
-            // Movement threshold increased to 3 meters (0.003 km) to prevent drift
-            // Also skip if speed is zero
-            if (d > 0.003 && rawSpeed > 0) {
+            // Movement threshold + Motion Aware: Only record if speed > 0 AND physically moving
+            // or if it's a very significant jump (to catch vehicles)
+            if ((d > 0.003 && rawSpeed > 0 && isMovingRef.current) || d > 0.05) {
               setDistance((old) => old + d);
               return [...prev, newPos];
             }
@@ -359,8 +362,8 @@ export default function MapPage() {
 
     recordWatchRef.current = navigator.geolocation.watchPosition(
       (pos) => {
-        // Stricter filtering for recording
-        const isStationary = pos.coords.speed != null && pos.coords.speed < 0.3;
+        // Stricter filtering for recording: use isMovingRef.current
+        const isStationary = (pos.coords.speed != null && pos.coords.speed < 0.3) || !isMovingRef.current;
         const isPoorAccuracy = pos.coords.accuracy > 25;
         
         if (isStationary && isPoorAccuracy) return;
@@ -384,7 +387,8 @@ export default function MapPage() {
           const dist = haversineDistance(last.lat, last.lon, filtered.lat, filtered.lon) * 1000;
 
           // Increased threshold to 3.0 meters for recording stability
-          if (dist > 3.0 && !isStationary) {
+          // Requires physical movement to be recorded
+          if (dist > 3.0 && isMovingRef.current) {
             return [...prev, filtered];
           }
 
@@ -441,6 +445,43 @@ export default function MapPage() {
       startRecording();
     }
   };
+
+  /**
+   * Motion detection logic similar to pedometer apps
+   * Monitors accelerometer to detect physical movement
+   */
+  useEffect(() => {
+    if (!tracking && !isRecording) {
+      setIsPhysicallyMoving(false);
+      return;
+    }
+
+    const handleMotion = (event: DeviceMotionEvent) => {
+      const acc = event.acceleration;
+      if (!acc) return;
+
+      // Calculate total acceleration magnitude excluding gravity
+      const magnitude = Math.sqrt((acc.x || 0) ** 2 + (acc.y || 0) ** 2 + (acc.z || 0) ** 2);
+      
+      motionHistoryRef.current = [...motionHistoryRef.current.slice(-15), magnitude];
+      
+      // Calculate variance in the last ~1 second
+      if (motionHistoryRef.current.length > 5) {
+        const avg = motionHistoryRef.current.reduce((a, b) => a + b, 0) / motionHistoryRef.current.length;
+        const variance = motionHistoryRef.current.reduce((a, b) => a + (b - avg) ** 2, 0) / motionHistoryRef.current.length;
+        
+        // Thresholds based on typical walking/hiking motion
+        // variance > 0.4 indicates clear stepping motion
+        const moving = variance > 0.4;
+        setIsPhysicallyMoving(moving);
+        isMovingRef.current = moving;
+      }
+    };
+
+    // Note: On iOS, this requires user permission. Capacitor handles this if configured.
+    window.addEventListener('devicemotion', handleMotion);
+    return () => window.removeEventListener('devicemotion', handleMotion);
+  }, [tracking, isRecording]);
 
   const recordDistanceMeters = useMemo(() => {
     if (recordedPoints.length < 2) return 0;
