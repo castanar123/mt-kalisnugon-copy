@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Star, Quote, MessageSquarePlus, Send, Loader2 } from 'lucide-react';
+import { Star, MessageSquarePlus, Send, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -20,21 +20,85 @@ interface Review {
 }
 
 const fallbackReviews: Review[] = [
-  { id: '1', reviewer_name: 'Maria Santos', rating: 5, trail_name: 'Summit Trail', review_text: 'The trail was absolutely breathtaking! The AI assistant helped us prepare perfectly — it even warned us about the slippery section near the summit.', created_at: '2026-02-15' },
-  { id: '2', reviewer_name: 'Juan Dela Cruz', rating: 5, trail_name: 'Ridge Route', review_text: 'As a first-time hiker, the offline AI guide was a lifesaver. Even without signal on the mountain, I could ask questions and get accurate answers.', created_at: '2026-01-20' },
-  { id: '3', reviewer_name: 'Angela Reyes', rating: 4, trail_name: 'Scenic Loop', review_text: 'Beautiful sunrise hike! The booking system was smooth and the QR code made check-in super fast. My family felt safe knowing the ranger tracking was active.', created_at: '2025-12-10' },
-  { id: '4', reviewer_name: 'Carlos Mendoza', rating: 5, trail_name: 'Summit Trail', review_text: 'I\'ve hiked Kalisungan many times but this tracking system changed everything. Real-time elevation profile and AI chatbot with offline mode — like a personal guide!', created_at: '2026-01-05' },
-  { id: '5', reviewer_name: 'Patricia Villanueva', rating: 5, trail_name: 'Ridge Route', review_text: 'Brought a group of 8 friends and the group booking feature was perfect. The system even reminded us what to bring based on the weather forecast.', created_at: '2026-02-01' },
-  { id: '6', reviewer_name: 'Roberto Aquino', rating: 4, trail_name: 'Scenic Loop', review_text: 'Great trail conditions info from ranger reports. The AI assistant gave me detailed info about nearby food spots even when offline. Very impressed.', created_at: '2025-11-25' },
+  {
+    id: '1',
+    reviewer_name: 'Maria Santos',
+    rating: 5,
+    trail_name: 'Summit Trail',
+    review_text: 'The trail was absolutely breathtaking! The AI assistant helped us prepare perfectly — it even warned us about the slippery section near the summit.',
+    created_at: '2026-02-15',
+  },
+  {
+    id: '2',
+    reviewer_name: 'Juan Dela Cruz',
+    rating: 5,
+    trail_name: 'Ridge Route',
+    review_text: 'As a first-time hiker, the offline AI guide was a lifesaver. Even without signal on the mountain, I could ask questions and get accurate answers.',
+    created_at: '2026-01-20',
+  },
+  {
+    id: '3',
+    reviewer_name: 'Angela Reyes',
+    rating: 4,
+    trail_name: 'Scenic Loop',
+    review_text: 'Beautiful sunrise hike! The booking system was smooth and the QR code made check-in super fast. My family felt safe knowing the ranger tracking was active.',
+    created_at: '2025-12-10',
+  },
+  {
+    id: '4',
+    reviewer_name: 'Carlos Mendoza',
+    rating: 5,
+    trail_name: 'Summit Trail',
+    review_text: "I've hiked Kalisungan many times but this tracking system changed everything. Real-time elevation profile and AI chatbot with offline mode — like a personal guide!",
+    created_at: '2026-01-05',
+  },
+  {
+    id: '5',
+    reviewer_name: 'Patricia Villanueva',
+    rating: 5,
+    trail_name: 'Ridge Route',
+    review_text: 'Brought a group of 8 friends and the group booking feature was perfect. The system even reminded us what to bring based on the weather forecast.',
+    created_at: '2026-02-01',
+  },
+  {
+    id: '6',
+    reviewer_name: 'Roberto Aquino',
+    rating: 4,
+    trail_name: 'Scenic Loop',
+    review_text: 'Great trail conditions info from ranger reports. The AI assistant gave me detailed info about nearby food spots even when offline. Very impressed.',
+    created_at: '2025-11-25',
+  },
 ];
 
-function StarRating({ rating, interactive, onChange }: { rating: number; interactive?: boolean; onChange?: (r: number) => void }) {
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+
+function averageRating(reviews: Review[]): string {
+  if (!reviews.length) return '0.0';
+  const avg = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
+  return avg.toFixed(1);
+}
+
+function StarRating({
+  rating,
+  interactive,
+  onChange,
+  size = 'md',
+}: {
+  rating: number;
+  interactive?: boolean;
+  onChange?: (r: number) => void;
+  size?: 'sm' | 'md';
+}) {
+  const sizeClass = size === 'sm' ? 'h-3.5 w-3.5' : 'h-4 w-4';
   return (
     <div className="flex items-center gap-0.5">
       {Array.from({ length: 5 }).map((_, i) => (
         <Star
           key={i}
-          className={`h-4 w-4 transition-colors ${
+          className={`${sizeClass} transition-colors ${
             i < rating ? 'text-primary fill-primary' : 'text-muted-foreground/30'
           } ${interactive ? 'cursor-pointer hover:text-primary' : ''}`}
           onClick={() => interactive && onChange?.(i + 1)}
@@ -44,27 +108,47 @@ function StarRating({ rating, interactive, onChange }: { rating: number; interac
   );
 }
 
-function ReviewCard({ review, index }: { review: Review; index: number }) {
-  const date = new Date(review.created_at);
-  const formatted = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+function TrailBadge({ trail }: { trail: string }) {
+  return (
+    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border border-primary/40 text-primary bg-primary/5 whitespace-nowrap">
+      {trail}
+    </span>
+  );
+}
 
+function ReviewCard({ review, index }: { review: Review; index: number }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
-      transition={{ delay: index * 0.1 }}
-      className="glass-card rounded-xl p-6 flex flex-col hover:border-primary/20 transition-colors"
+      transition={{ duration: 0.4, delay: index * 0.07 }}
+      className="flex flex-col rounded-2xl border border-border/40 bg-card/70 backdrop-blur-sm p-5 gap-3 hover:border-primary/30 transition-colors duration-200"
     >
-      <Quote className="h-7 w-7 text-primary/15 mb-3" />
-      <p className="text-sm text-muted-foreground flex-1 mb-4 leading-relaxed">"{review.review_text}"</p>
+      {/* Quote icon */}
+      <div
+        className="text-4xl font-serif leading-none select-none"
+        style={{ color: 'hsl(152 60% 42% / 0.22)', fontFamily: 'Georgia, serif' }}
+        aria-hidden="true"
+      >
+        &#8220;
+      </div>
+
+      {/* Review text */}
+      <p className="text-sm text-muted-foreground leading-relaxed flex-1">
+        &ldquo;{review.review_text}&rdquo;
+      </p>
+
+      {/* Stars */}
       <StarRating rating={review.rating} />
-      <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/30">
-        <div>
-          <p className="font-semibold text-sm">{review.reviewer_name}</p>
-          <p className="text-xs text-muted-foreground">{formatted}</p>
+
+      {/* Footer: name/date + trail badge */}
+      <div className="flex items-end justify-between gap-2 pt-1 border-t border-border/20 mt-1">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground truncate">{review.reviewer_name}</p>
+          <p className="text-xs text-muted-foreground">{formatDate(review.created_at)}</p>
         </div>
-        <span className="text-xs px-2.5 py-1 rounded-full bg-primary/10 text-primary font-medium">{review.trail_name}</span>
+        <TrailBadge trail={review.trail_name} />
       </div>
     </motion.div>
   );
@@ -140,7 +224,6 @@ function ReviewForm({ onSubmitted }: { onSubmitted: () => void }) {
 export default function HikerReviews() {
   const [reviews, setReviews] = useState<Review[]>(fallbackReviews);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const { user } = useAuth();
 
   const fetchReviews = async () => {
     const { data, error } = await supabase
@@ -157,51 +240,58 @@ export default function HikerReviews() {
 
   useEffect(() => { fetchReviews(); }, []);
 
-  const avgRating = reviews.length > 0
-    ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1)
-    : '5.0';
+  const avg = averageRating(reviews);
 
   return (
     <section className="py-24 px-4 relative overflow-hidden">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_hsl(152_60%_42%/0.04)_0%,_transparent_70%)]" />
-      <div className="container max-w-6xl mx-auto relative">
+
+      <div className="container max-w-5xl mx-auto relative">
+
+        {/* Header */}
         <motion.div
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          className="text-center mb-16"
+          className="text-center mb-10"
         >
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">What Hikers Are <span className="text-gradient">Saying</span></h2>
-          <p className="text-muted-foreground max-w-xl mx-auto mb-6">
+          <h2 className="text-3xl md:text-4xl font-bold mb-3">
+            What Hikers Are <span className="text-accent">Saying</span>
+          </h2>
+          <p className="text-sm text-muted-foreground mb-6">
             Real experiences from adventurers who conquered Mount Kalisungan.
           </p>
-          <div className="inline-flex items-center gap-3 glass-card rounded-full px-5 py-2.5">
-            <div className="flex items-center gap-1">
+
+          {/* Rating summary pill */}
+          <div className="inline-flex items-center gap-2.5 px-5 py-2 rounded-full border border-border/40 bg-card/60 backdrop-blur-sm">
+            <div className="flex items-center gap-0.5">
               {Array.from({ length: 5 }).map((_, i) => (
                 <Star key={i} className="h-4 w-4 text-primary fill-primary" />
               ))}
             </div>
-            <span className="font-bold text-lg">{avgRating}</span>
+            <span className="font-bold text-foreground">{avg}</span>
             <span className="text-sm text-muted-foreground">from {reviews.length} reviews</span>
           </div>
         </motion.div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+        {/* Review grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
           {reviews.map((review, i) => (
             <ReviewCard key={review.id} review={review} index={i} />
           ))}
         </div>
 
+        {/* CTA */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          className="text-center mt-12"
+          className="text-center"
         >
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" size="lg" className="gap-2">
-                <MessageSquarePlus className="h-5 w-5" />
+                <MessageSquarePlus className="h-4 w-4" />
                 Share Your Experience
               </Button>
             </DialogTrigger>

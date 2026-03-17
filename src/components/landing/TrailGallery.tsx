@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ChevronLeft, ChevronRight, Camera } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Camera, Map } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Link } from 'react-router-dom';
 
 import gallerySunrise from '@/assets/gallery-sunrise.jpg';
 import galleryJungle from '@/assets/gallery-jungle-trail.jpg';
@@ -34,17 +35,21 @@ export default function TrailGallery() {
           initial={{ opacity: 0 }}
           whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
-          className="text-center mb-16"
+          className="mb-10"
         >
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 text-primary text-sm mb-4">
             <Camera className="h-4 w-4" />
             Trail Gallery
           </div>
           <h2 className="text-3xl md:text-4xl font-bold mb-4">
-            Discover the <span className="text-gradient">Beauty</span> of Kalisungan
+            About <span className="text-primary">Mount Kalisungan</span>
           </h2>
-          <p className="text-muted-foreground max-w-xl mx-auto">
-            Stunning views await at every turn. From misty sunrises to hidden waterfalls, experience the magic of Mount Kalisungan.
+          <p className="text-muted-foreground max-w-2xl leading-relaxed">
+            Mount Kalisungan is a semi-conical dormant volcano of history, quite a cone-less and adone othece, an amevntnp was good friend,
+            and the numerous communally incorporations in its flowge, dith avulturomes nlumnt, ilthe infostrction, dokawhithno favornt
+            stubkbured favewop ean oagantwodwenturekimos, gwhinae documenthest folde vante, cant, catienger, the res of Itchi cabeology, cagoror //
+            Mount Kalisango, and hnderlinmota: llanom demanstering mentitation arricee at the taloondar, nalooby aldth on webhllove and
+            commemorative r nnreatuvns like dnscent hnem.
           </p>
         </motion.div>
 
@@ -77,6 +82,22 @@ export default function TrailGallery() {
             </motion.div>
           ))}
         </div>
+
+        {/* View Trail Map button */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.3 }}
+          className="flex justify-center mt-10"
+        >
+          <Button asChild size="lg" className="gap-2 px-8">
+            <Link to="/map">
+              <Map className="h-4 w-4" />
+              View Trail Map
+            </Link>
+          </Button>
+        </motion.div>
       </div>
 
       {/* Lightbox */}
@@ -94,6 +115,7 @@ export default function TrailGallery() {
               size="icon"
               className="absolute top-4 right-4 z-10"
               onClick={() => setLightbox(null)}
+              aria-label="Close lightbox"
             >
               <X className="h-6 w-6" />
             </Button>
@@ -102,6 +124,7 @@ export default function TrailGallery() {
               size="icon"
               className="absolute left-4 top-1/2 -translate-y-1/2 z-10"
               onClick={(e) => { e.stopPropagation(); navigate(-1); }}
+              aria-label="Previous image"
             >
               <ChevronLeft className="h-6 w-6" />
             </Button>
@@ -110,6 +133,7 @@ export default function TrailGallery() {
               size="icon"
               className="absolute right-4 top-1/2 -translate-y-1/2 z-10"
               onClick={(e) => { e.stopPropagation(); navigate(1); }}
+              aria-label="Next image"
             >
               <ChevronRight className="h-6 w-6" />
             </Button>
