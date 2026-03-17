@@ -389,7 +389,7 @@ export default function MapPage() {
     setGpsSignal('None');
     // The `useEffect` hooks for tracking and polling will handle clearing their respective intervals/watches
     // when the `tracking` state becomes false. This function just initiates that state change.
-  }, []);
+  };
 
   useEffect(() => {
     if (tracking) {
