@@ -278,6 +278,8 @@ export default function MapPage() {
     setTracking(true);
   };
 
+
+
   const handleNewPosition = useCallback((pos: GeolocationPosition) => {
       // Step 1: GPS Signal Quality Filter
       const accuracy = pos.coords.accuracy;
@@ -349,7 +351,7 @@ export default function MapPage() {
       } else {
         setOffTrail(false);
       }
-    }, [selectedTrail, applyKalmanFilter, isGpsTestMode, handleOfflineCache]);
+    }, [selectedTrail, applyKalmanFilter, isGpsTestMode]);
 
   const handleError = useCallback((err: GeolocationPositionError) => {
     if (err.code === err.PERMISSION_DENIED) {
