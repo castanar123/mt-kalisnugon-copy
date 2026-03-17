@@ -160,6 +160,8 @@ export default function MapPage() {
   const [isPhysicallyMoving, setIsPhysicallyMoving] = useState(false);
   const isMovingRef = useRef(false);
   const motionHistoryRef = useRef<number[]>([]);
+  const [stepCount, setStepCount] = useState(0);
+  const stepDetectionState = useRef({ lastPeak: 0, isPeak: false });
   const [recordedPoints, setRecordedPoints] = useState<RecordedPoint[]>([]);
   const recordWatchRef = useRef<number | null>(null);
   const watchRef = useRef<number | null>(null);
@@ -246,6 +248,8 @@ export default function MapPage() {
     setDistance(0);
     setElapsed(0);
     setCurrentSpeed(0);
+    setStepCount(0);
+    stepDetectionState.current = { lastPeak: 0, isPeak: false };
     kalmanStateRef.current = null; // Reset Kalman filter
     timerRef.current = setInterval(() => setElapsed((s) => s + 1), 1000);
 
@@ -357,6 +361,8 @@ export default function MapPage() {
       return;
     }
     setRecordedPoints([]);
+    setStepCount(0);
+    stepDetectionState.current = { lastPeak: 0, isPeak: false };
     kalmanStateRef.current = null; // Reset Kalman filter
     setIsRecording(true);
 
@@ -458,28 +464,55 @@ export default function MapPage() {
 
     const handleMotion = (event: DeviceMotionEvent) => {
       const acc = event.acceleration;
-      if (!acc) return;
+      if (!acc || !acc.x || !acc.y || !acc.z) return;
 
-      // Calculate total acceleration magnitude excluding gravity
-      const magnitude = Math.sqrt((acc.x || 0) ** 2 + (acc.y || 0) ** 2 + (acc.z || 0) ** 2);
+      const magnitude = Math.sqrt(acc.x ** 2 + acc.y ** 2 + acc.z ** 2);
       
+      // --- Motion detection for GPS gating (Pacer strategy) ---
       motionHistoryRef.current = [...motionHistoryRef.current.slice(-15), magnitude];
-      
-      // Calculate variance in the last ~1 second
       if (motionHistoryRef.current.length > 5) {
         const avg = motionHistoryRef.current.reduce((a, b) => a + b, 0) / motionHistoryRef.current.length;
         const variance = motionHistoryRef.current.reduce((a, b) => a + (b - avg) ** 2, 0) / motionHistoryRef.current.length;
-        
-        // Thresholds based on typical walking/hiking motion
-        // variance > 0.4 indicates clear stepping motion
-        const moving = variance > 0.4;
+        const moving = variance > 0.3; // Adjusted for more sensitivity
         setIsPhysicallyMoving(moving);
         isMovingRef.current = moving;
       }
+
+      // --- Pedometer Step Counting Logic ---
+      const now = Date.now();
+      const HIGH_THRESHOLD = 11.0; // m/s^2, walking creates peaks > 11
+      const LOW_THRESHOLD = 9.0;  // m/s^2, valleys between steps
+      const MIN_STEP_INTERVAL = 300; // ms, prevents counting noise as multiple steps
+
+      const state = stepDetectionState.current;
+
+      if (magnitude > HIGH_THRESHOLD && !state.isPeak) {
+        // Potential step peak detected
+        state.isPeak = true;
+      } else if (magnitude < LOW_THRESHOLD && state.isPeak) {
+        // Step confirmed by transitioning from peak to valley
+        if (now - state.lastPeak > MIN_STEP_INTERVAL) {
+          setStepCount(s => s + 1);
+          state.lastPeak = now;
+        }
+        state.isPeak = false;
+      }
     };
 
-    // Note: On iOS, this requires user permission. Capacitor handles this if configured.
-    window.addEventListener('devicemotion', handleMotion);
+    // Request permission for motion sensors on iOS 13.3+
+    if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
+      (DeviceMotionEvent as any).requestPermission()
+        .then((permissionState: string) => {
+          if (permissionState === 'granted') {
+            window.addEventListener('devicemotion', handleMotion);
+          }
+        })
+        .catch(console.error);
+    } else {
+      // Handle non-iOS 13.3+ devices
+      window.addEventListener('devicemotion', handleMotion);
+    }
+
     return () => window.removeEventListener('devicemotion', handleMotion);
   }, [tracking, isRecording]);
 
@@ -547,6 +580,7 @@ export default function MapPage() {
           distance={distance}
           elapsed={elapsed}
           currentSpeed={currentSpeed}
+          stepCount={stepCount}
           selectedTrail={selectedTrail}
           offTrail={offTrail}
           tracking={tracking}
@@ -817,6 +851,9 @@ export default function MapPage() {
                   </span>
                   <span>
                     <span className="text-foreground font-semibold">{displayPace > 0 ? displayPace.toFixed(1) : '--'}</span> min/km
+                  </span>
+                  <span>
+                    <span className="text-foreground font-semibold">{stepCount}</span> steps
                   </span>
                 </div>
               </div>

@@ -8,6 +8,7 @@ interface TrailStatsProps {
   distance: number;
   elapsed: number;
   currentSpeed: number | null;
+  stepCount: number;
   selectedTrail: number;
   offTrail: boolean;
   tracking: boolean;
@@ -25,7 +26,7 @@ function formatTime(s: number) {
 }
 
 export default function TrailStats({
-  distance, elapsed, currentSpeed, selectedTrail, offTrail, tracking, offlineReady,
+  distance, elapsed, currentSpeed, stepCount, selectedTrail, offTrail, tracking, offlineReady,
   onStartTracking, onStopTracking, onOfflineCache,
 }: TrailStatsProps) {
   const avgPace = elapsed > 0 && distance > 0 ? elapsed / 60 / distance : 0;
@@ -64,6 +65,9 @@ export default function TrailStats({
               </span>
               <span className="whitespace-nowrap">
                 <span className="text-foreground font-semibold">{displayPace > 0 ? displayPace.toFixed(1) : '--'}</span> min/km
+              </span>
+              <span className="whitespace-nowrap">
+                <span className="text-foreground font-semibold">{stepCount}</span> steps
               </span>
             </div>
           </div>
