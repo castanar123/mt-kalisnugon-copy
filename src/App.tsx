@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
+import { ThemeProvider } from "@/hooks/useTheme";
 import Navbar from "@/components/layout/Navbar";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
@@ -24,21 +25,23 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <AuthProvider>
-          <Navbar />
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/map" element={<MapPage />} />
-            <Route path="/chat" element={<ChatPage />} />
-            <Route path="/booking" element={<BookingPage />} />
-            <Route path="/admin" element={<AdminDashboard />} />
-            <Route path="/ranger" element={<RangerDashboard />} />
-            <Route path="/hiker" element={<HikerDashboard />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </AuthProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <Navbar />
+            <Routes>
+              <Route path="/" element={<Index />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/map" element={<MapPage />} />
+              <Route path="/chat" element={<ChatPage />} />
+              <Route path="/booking" element={<BookingPage />} />
+              <Route path="/admin" element={<AdminDashboard />} />
+              <Route path="/ranger" element={<RangerDashboard />} />
+              <Route path="/hiker" element={<HikerDashboard />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </AuthProvider>
+        </ThemeProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

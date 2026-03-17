@@ -4,6 +4,59 @@
 
 @layer base {
   :root {
+    /* Light theme – airy mountain morning */
+    --background: 160 30% 97%;
+    --foreground: 160 20% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 160 20% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 160 20% 15%;
+
+    --primary: 152 55% 40%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 160 20% 92%;
+    --secondary-foreground: 160 20% 20%;
+
+    --muted: 160 18% 90%;
+    --muted-foreground: 160 10% 40%;
+
+    --accent: 40 90% 55%;
+    --accent-foreground: 0 0% 10%;
+
+    --destructive: 0 65% 52%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 160 15% 85%;
+    --input: 160 15% 85%;
+    --ring: 152 55% 40%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 160 20% 20%;
+    --sidebar-primary: 152 55% 40%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 160 20% 94%;
+    --sidebar-accent-foreground: 160 20% 20%;
+    --sidebar-border: 160 15% 82%;
+    --sidebar-ring: 152 55% 40%;
+
+    --sky: 200 80% 60%;
+    --sky-foreground: 0 0% 10%;
+    --warning: 40 95% 55%;
+    --warning-foreground: 0 0% 10%;
+    --success: 152 55% 40%;
+    --success-foreground: 0 0% 100%;
+
+    --glass: 0 0% 100% / 0.7;
+    --glass-border: 160 15% 80% / 0.6;
+  }
+
+  .dark {
+    /* Dark theme – existing mountain night palette */
     --background: 160 10% 6%;
     --foreground: 140 20% 92%;
 
@@ -31,8 +84,6 @@
     --border: 155 15% 18%;
     --input: 155 15% 18%;
     --ring: 152 60% 42%;
-
-    --radius: 0.75rem;
 
     --sidebar-background: 160 12% 8%;
     --sidebar-foreground: 140 20% 92%;
@@ -83,21 +134,21 @@
   }
 }
 
-/* Leaflet overrides for dark theme */
+/* Leaflet theme-aware overrides */
 .leaflet-container {
-  background: hsl(160 10% 6%) !important;
+  background: hsl(var(--background)) !important;
 }
 .leaflet-control-zoom a {
-  background: hsl(160 12% 10% / 0.9) !important;
-  color: hsl(140 20% 92%) !important;
-  border-color: hsl(155 15% 18%) !important;
+  background: hsl(var(--card)) !important;
+  color: hsl(var(--foreground)) !important;
+  border-color: hsl(var(--border)) !important;
 }
 .leaflet-popup-content-wrapper {
-  background: hsl(160 12% 10% / 0.95) !important;
-  color: hsl(140 20% 92%) !important;
+  background: hsl(var(--card)) !important;
+  color: hsl(var(--card-foreground)) !important;
   border-radius: 0.75rem !important;
   backdrop-filter: blur(20px) !important;
 }
 .leaflet-popup-tip {
-  background: hsl(160 12% 10% / 0.95) !important;
+  background: hsl(var(--card)) !important;
 }

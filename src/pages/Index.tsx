@@ -147,7 +147,7 @@ export default function Index() {
             className="w-full h-full object-cover"
             loading="eager"
           />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/50 to-background" />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/50 to-black/10 dark:to-background" />
         </div>
 
         <motion.div
@@ -179,12 +179,12 @@ export default function Index() {
                 </div>
               </motion.div>
 
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-black mb-4 leading-tight">
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-black mb-4 leading-tight text-white drop-shadow-[0_10px_35px_rgba(0,0,0,0.55)]">
                 Stunning <span className="text-gradient">High Treks</span>{' '}
-                <span className="block text-foreground/90">On Mount Kalisungan</span>
+                <span className="block text-white/90">On Mount Kalisungan</span>
               </h1>
 
-              <p className="text-sm sm:text-base md:text-lg text-muted-foreground max-w-xl mx-auto lg:mx-0 mb-8">
+              <p className="text-sm sm:text-base md:text-lg text-white/75 max-w-xl mx-auto lg:mx-0 mb-8 drop-shadow-[0_8px_28px_rgba(0,0,0,0.45)]">
                 Plan, book, and track every step of your Kalisungan hike with live weather, elevation
                 insights, and GPS-guided navigation — built for both hikers and rangers.
               </p>
@@ -201,17 +201,17 @@ export default function Index() {
               </div>
 
               {/* Quick stats for desktop, tucked below copy */}
-              <div className="hidden sm:flex mt-8 gap-6 text-xs sm:text-sm text-muted-foreground">
+              <div className="hidden sm:flex mt-8 gap-6 text-xs sm:text-sm text-white/70 drop-shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
                 <div>
-                  <div className="text-xl font-semibold text-foreground">622 m</div>
+                  <div className="text-xl font-semibold text-white">622 m</div>
                   <div>Summit elevation</div>
                 </div>
                 <div>
-                  <div className="text-xl font-semibold text-foreground">3 trails</div>
+                  <div className="text-xl font-semibold text-white">3 trails</div>
                   <div>Summit • River • Ridge</div>
                 </div>
                 <div>
-                  <div className="text-xl font-semibold text-foreground">AI</div>
+                  <div className="text-xl font-semibold text-white">AI</div>
                   <div>Trail assistant & offline KB</div>
                 </div>
               </div>
