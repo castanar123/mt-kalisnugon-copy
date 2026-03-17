@@ -53,7 +53,7 @@ function LocateControl({
       size="icon"
       variant="outline"
       className={className ?? `absolute right-4 z-[1000] glass-card ${bottomClassName ?? 'bottom-[7.5rem]'} md:bottom-4`}
-      onClick={() => map?.locate({ setView: true, maxZoom: 17, timeout: 30000, enableHighAccuracy: true })}
+      onClick={() => map?.locate({ setView: true, maxZoom: 17, timeout: 30000, enableHighAccuracy: true, maximumAge: 0 })}
       disabled={!map}
       aria-label="Locate me"
     >
@@ -146,6 +146,7 @@ export default function MapPage() {
   const mapRef = useRef<L.Map | null>(null);
   const [baseLayer, setBaseLayer] = useState<BaseLayer>('street');
   const [userPos, setUserPos] = useState<[number, number] | null>(null);
+  const [displayPos, setDisplayPos] = useState<[number, number] | null>(null);
   const [trackPath, setTrackPath] = useState<[number, number][]>([]);
   const [distance, setDistance] = useState(0);
   const [elapsed, setElapsed] = useState(0);
@@ -175,6 +176,39 @@ export default function MapPage() {
     variance: number; // Error covariance
     lastTimestamp: number;
   } | null>(null);
+
+  // Smooth interpolation for the hiker marker
+  useEffect(() => {
+    if (!userPos) return;
+    if (!displayPos) {
+      setDisplayPos(userPos);
+      return;
+    }
+
+    let frameId: number;
+    const startPos = displayPos;
+    const endPos = userPos;
+    const startTime = performance.now();
+    const duration = 1000; // Interpolate over 1 second (typical GPS interval)
+
+    const animate = (currentTime: number) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+
+      // Simple linear interpolation
+      const lat = startPos[0] + (endPos[0] - startPos[0]) * progress;
+      const lng = startPos[1] + (endPos[1] - startPos[1]) * progress;
+
+      setDisplayPos([lat, lng]);
+
+      if (progress < 1) {
+        frameId = requestAnimationFrame(animate);
+      }
+    };
+
+    frameId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frameId);
+  }, [userPos]);
 
   type RecordedPoint = {
     timestamp: number;
@@ -252,80 +286,93 @@ export default function MapPage() {
     kalmanStateRef.current = null; // Reset Kalman filter
     timerRef.current = setInterval(() => setElapsed((s) => s + 1), 1000);
 
-    watchRef.current = navigator.geolocation.watchPosition(
-      (pos) => {
-        // Velocity-gating: If accuracy is poor (> 20m) and speed is zero, skip update
-        if (pos.coords.accuracy > 20 && (pos.coords.speed === 0 || pos.coords.speed == null)) {
-          return;
-        }
+    const handleNewPosition = (pos: GeolocationPosition) => {
+      // Velocity-gating: If accuracy is poor (> 20m) and speed is zero, skip update
+      if (pos.coords.accuracy > 20 && (pos.coords.speed === 0 || pos.coords.speed == null)) {
+        return;
+      }
 
-        const raw: RecordedPoint = {
-          timestamp: Date.now(),
-          lat: pos.coords.latitude,
-          lon: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-        };
+      const raw: RecordedPoint = {
+        timestamp: Date.now(),
+        lat: pos.coords.latitude,
+        lon: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+      };
 
-        const filtered = applyKalmanFilter(raw);
-        const newPos: [number, number] = [filtered.lat, filtered.lon];
-        
-        // Update current speed with dead-zone (reported in m/s, convert to km/h)
-        const rawSpeed = pos.coords.speed != null && pos.coords.speed > 0.3 ? pos.coords.speed * 3.6 : 0;
-        setCurrentSpeed(rawSpeed);
+      const filtered = applyKalmanFilter(raw);
+      const newPos: [number, number] = [filtered.lat, filtered.lon];
+      
+      // Update current speed with dead-zone (reported in m/s, convert to km/h)
+      const rawSpeed = pos.coords.speed != null && pos.coords.speed > 0.3 ? pos.coords.speed * 3.6 : 0;
+      setCurrentSpeed(rawSpeed);
 
-        // Clear any pending "set to zero" timeout
-        if (speedTimeoutRef.current) clearTimeout(speedTimeoutRef.current);
-        if (rawSpeed > 0) {
-          // If no speed update for 4 seconds, assume stopped
-          speedTimeoutRef.current = setTimeout(() => setCurrentSpeed(0), 4000);
-        }
+      // Clear any pending "set to zero" timeout
+      if (speedTimeoutRef.current) clearTimeout(speedTimeoutRef.current);
+      if (rawSpeed > 0) {
+        // If no speed update for 4 seconds, assume stopped
+        speedTimeoutRef.current = setTimeout(() => setCurrentSpeed(0), 4000);
+      }
 
-        setUserPos(newPos);
-        setTrackPath((prev) => {
-          if (prev.length > 0) {
-            const last = prev[prev.length - 1];
-            const d = haversineDistance(last[0], last[1], newPos[0], newPos[1]);
-            
-            // Movement threshold + Motion Aware: Only record if speed > 0 AND physically moving
-            // or if it's a very significant jump (to catch vehicles)
-            if ((d > 0.003 && rawSpeed > 0 && isPhysicallyMoving) || d > 0.05) {
-              setDistance((old) => old + d);
-              return [...prev, newPos];
-            }
-            return prev;
+      setUserPos(newPos);
+      setTrackPath((prev) => {
+        if (prev.length > 0) {
+          const last = prev[prev.length - 1];
+          const d = haversineDistance(last[0], last[1], newPos[0], newPos[1]);
+          
+          // Movement threshold + Motion Aware: Only record if speed > 0 AND physically moving
+          // or if it's a very significant jump (to catch vehicles)
+          if ((d > 0.003 && rawSpeed > 0 && isPhysicallyMoving) || d > 0.05) {
+            setDistance((old) => old + d);
+            return [...prev, newPos];
           }
-          return [newPos];
-        });
-
-        // Track progress along selected trail
-        const idx = findNearestTrailIndex(newPos, TRAILS[selectedTrail].path);
-        setUserTrailProgress(idx);
-
-        // Check if off-trail (> 100m from nearest trail point)
-        const minDist = Math.min(...TRAILS.map((t) => distanceToTrail(newPos[0], newPos[1], t.path)));
-        if (!isAccuracyMode && minDist > 0.1) {
-          setOffTrail(true);
-          toast.warning('You are off the marked trail!', { id: 'off-trail' });
-        } else {
-          setOffTrail(false);
+          return prev;
         }
-      },
-      (err) => {
-        // Only show toast for non-timeout errors, or if it's the first few timeouts
-        if (err.code !== 3) {
-          toast.error(`GPS Error: ${err.message}`);
-        } else {
-          console.warn('GPS Timeout: Still waiting for signal...');
-        }
-      },
-      { enableHighAccuracy: true, maximumAge: 3000, timeout: 30000 }
-    );
-  }, [selectedTrail, isAccuracyMode, applyKalmanFilter, resetPedometer, startPedometer]);
+        return [newPos];
+      });
+
+      // Track progress along selected trail
+      const idx = findNearestTrailIndex(newPos, TRAILS[selectedTrail].path);
+      setUserTrailProgress(idx);
+
+      // Check if off-trail (> 100m from nearest trail point)
+      const minDist = Math.min(...TRAILS.map((t) => distanceToTrail(newPos[0], newPos[1], t.path)));
+      if (!isAccuracyMode && minDist > 0.1) {
+        setOffTrail(true);
+        toast.warning('You are off the marked trail!', { id: 'off-trail' });
+      } else {
+        setOffTrail(false);
+      }
+    };
+
+    const handleError = (err: GeolocationPositionError) => {
+      if (err.code !== 3) {
+        toast.error(`GPS Error: ${err.message}`);
+      } else {
+        console.warn('GPS Timeout: Still waiting for signal...');
+      }
+    };
+
+    const options = { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 };
+
+    watchRef.current = navigator.geolocation.watchPosition(handleNewPosition, handleError, options);
+
+    // High-frequency polling heartbeat for web browsers (every 1s)
+    const pollingInterval = setInterval(() => {
+      navigator.geolocation.getCurrentPosition(handleNewPosition, () => {}, options);
+    }, 1000);
+
+    // Store polling interval in a ref to clear it later
+    (watchRef as any).polling = pollingInterval;
+
+  }, [selectedTrail, isAccuracyMode, applyKalmanFilter, resetPedometer, startPedometer, isPhysicallyMoving]);
 
   const stopTracking = useCallback(() => {
     setTracking(false);
     stopPedometer();
-    if (watchRef.current !== null) navigator.geolocation.clearWatch(watchRef.current);
+    if (watchRef.current !== null) {
+      navigator.geolocation.clearWatch(watchRef.current);
+      if ((watchRef as any).polling) clearInterval((watchRef as any).polling);
+    }
     if (timerRef.current) clearInterval(timerRef.current);
   }, [stopPedometer]);
 
@@ -373,57 +420,68 @@ export default function MapPage() {
     kalmanStateRef.current = null; // Reset Kalman filter
     setIsRecording(true);
 
-    recordWatchRef.current = navigator.geolocation.watchPosition(
-      (pos) => {
-        // Stricter filtering for recording: use isPhysicallyMoving
-        const isStationary = (pos.coords.speed != null && pos.coords.speed < 0.3) || !isPhysicallyMoving;
-        const isPoorAccuracy = pos.coords.accuracy > 25;
-        
-        if (isStationary && isPoorAccuracy) return;
+    const handleNewRecordPoint = (pos: GeolocationPosition) => {
+      // Stricter filtering for recording: use isPhysicallyMoving
+      const isStationary = (pos.coords.speed != null && pos.coords.speed < 0.3) || !isPhysicallyMoving;
+      const isPoorAccuracy = pos.coords.accuracy > 25;
+      
+      if (isStationary && isPoorAccuracy) return;
 
-        const raw: RecordedPoint = {
-          timestamp: Date.now(),
-          lat: pos.coords.latitude,
-          lon: pos.coords.longitude,
-          alt: pos.coords.altitude,
-          speed: pos.coords.speed,
-          accuracy: pos.coords.accuracy,
-          heading: pos.coords.heading,
-        };
+      const raw: RecordedPoint = {
+        timestamp: Date.now(),
+        lat: pos.coords.latitude,
+        lon: pos.coords.longitude,
+        alt: pos.coords.altitude,
+        speed: pos.coords.speed,
+        accuracy: pos.coords.accuracy,
+        heading: pos.coords.heading,
+      };
 
-        const filtered = applyKalmanFilter(raw);
+      const filtered = applyKalmanFilter(raw);
 
-        setRecordedPoints((prev) => {
-          if (prev.length === 0) return [filtered];
+      setRecordedPoints((prev) => {
+        if (prev.length === 0) return [filtered];
 
-          const last = prev[prev.length - 1];
-          const dist = haversineDistance(last.lat, last.lon, filtered.lat, filtered.lon) * 1000;
+        const last = prev[prev.length - 1];
+        const dist = haversineDistance(last.lat, last.lon, filtered.lat, filtered.lon) * 1000;
 
-          // Increased threshold to 3.0 meters for recording stability
-          // Requires physical movement to be recorded
-          if (dist > 3.0 && isPhysicallyMoving) {
-            return [...prev, filtered];
-          }
-
-          // Update speed for real-time display even if stationary
-          if (filtered.speed != null) {
-            const updated = [...prev];
-            updated[updated.length - 1] = { ...updated[updated.length - 1], speed: isStationary ? 0 : filtered.speed };
-            return updated;
-          }
-
-          return prev;
-        });
-      },
-      (err) => {
-        if (err.code !== 3) {
-          toast.error(`Recording Error: ${err.message}`);
-        } else {
-          console.warn('Recording GPS Timeout: Still waiting...');
+        // Increased threshold to 3.0 meters for recording stability
+        // Requires physical movement to be recorded
+        if (dist > 3.0 && isPhysicallyMoving) {
+          return [...prev, filtered];
         }
-      },
-      { enableHighAccuracy: true, maximumAge: 3000, timeout: 30000 }
-    );
+
+        // Update speed for real-time display even if stationary
+        if (filtered.speed != null) {
+          const updated = [...prev];
+          updated[updated.length - 1] = { ...updated[updated.length - 1], speed: isStationary ? 0 : filtered.speed };
+          return updated;
+        }
+
+        return prev;
+      });
+    };
+
+    const handleRecordError = (err: GeolocationPositionError) => {
+      if (err.code !== 3) {
+        toast.error(`Recording Error: ${err.message}`);
+      } else {
+        console.warn('Recording GPS Timeout: Still waiting...');
+      }
+    };
+
+    const options = { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 };
+
+    recordWatchRef.current = navigator.geolocation.watchPosition(handleNewRecordPoint, handleRecordError, options);
+
+    // High-frequency polling heartbeat for recording (every 1s)
+    const pollingInterval = setInterval(() => {
+      navigator.geolocation.getCurrentPosition(handleNewRecordPoint, () => {}, options);
+    }, 1000);
+
+    // Store polling interval in a ref
+    (recordWatchRef as any).polling = pollingInterval;
+
   }, [applyKalmanFilter, isPhysicallyMoving, resetPedometer, startPedometer]);
 
   const stopRecording = useCallback(() => {
@@ -431,6 +489,7 @@ export default function MapPage() {
     stopPedometer();
     if (recordWatchRef.current != null) {
       navigator.geolocation.clearWatch(recordWatchRef.current);
+      if ((recordWatchRef as any).polling) clearInterval((recordWatchRef as any).polling);
       recordWatchRef.current = null;
     }
   }, [stopPedometer]);
@@ -654,12 +713,13 @@ export default function MapPage() {
               </Marker>
             ))}
 
-            {userPos && (
+            {/* User Location Hiker Marker */}
+            {(displayPos || userPos) && (
               <>
-                <Marker position={userPos} icon={hikerIcon}>
+                <Marker position={displayPos || userPos!} icon={hikerIcon}>
                   <Popup>Your Position</Popup>
                 </Marker>
-                <Circle center={userPos} radius={15} pathOptions={{ color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.15 }} />
+                <Circle center={displayPos || userPos!} radius={15} pathOptions={{ color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.15 }} />
               </>
             )}
 
