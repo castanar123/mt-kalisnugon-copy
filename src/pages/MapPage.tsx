@@ -188,7 +188,7 @@ export default function MapPage() {
    */
   const applyKalmanFilter = useCallback((raw: RecordedPoint): RecordedPoint => {
     const minAccuracy = 1.0; // Assume 1m is the best possible accuracy
-    const processNoise = 0.000001; // How much we expect the hiker to move between updates (lat/lon units)
+    const processNoise = 0.0000001; // Lowered for better stationary stability
     
     if (!kalmanStateRef.current) {
       kalmanStateRef.current = {
@@ -202,9 +202,14 @@ export default function MapPage() {
 
     const state = kalmanStateRef.current;
     const dt = (raw.timestamp - state.lastTimestamp) / 1000.0;
+    
+    // Ignore updates that are too frequent (less than 500ms) to avoid noise amplification
+    if (dt < 0.5) return { ...raw, lat: state.lat, lon: state.lon };
+
     const currentAccuracy = Math.max(raw.accuracy || 10, minAccuracy);
 
     // 1. Prediction Step: Assume position stays same (process noise increases variance)
+    // We scale process noise by dt to account for time between updates
     const predictedVariance = state.variance + processNoise * dt;
 
     // 2. Update Step: Calculate Kalman Gain
@@ -243,6 +248,11 @@ export default function MapPage() {
 
     watchRef.current = navigator.geolocation.watchPosition(
       (pos) => {
+        // Velocity-gating: If accuracy is poor (> 20m) and speed is zero, skip update
+        if (pos.coords.accuracy > 20 && (pos.coords.speed === 0 || pos.coords.speed == null)) {
+          return;
+        }
+
         const raw: RecordedPoint = {
           timestamp: Date.now(),
           lat: pos.coords.latitude,
@@ -253,17 +263,15 @@ export default function MapPage() {
         const filtered = applyKalmanFilter(raw);
         const newPos: [number, number] = [filtered.lat, filtered.lon];
         
-        // Update current speed (reported in m/s, convert to km/h)
-        if (pos.coords.speed != null && pos.coords.speed >= 0) {
-          setCurrentSpeed(pos.coords.speed * 3.6);
-          
-          // Clear any pending "set to zero" timeout
-          if (speedTimeoutRef.current) clearTimeout(speedTimeoutRef.current);
+        // Update current speed with dead-zone (reported in m/s, convert to km/h)
+        const rawSpeed = pos.coords.speed != null && pos.coords.speed > 0.3 ? pos.coords.speed * 3.6 : 0;
+        setCurrentSpeed(rawSpeed);
+
+        // Clear any pending "set to zero" timeout
+        if (speedTimeoutRef.current) clearTimeout(speedTimeoutRef.current);
+        if (rawSpeed > 0) {
           // If no speed update for 4 seconds, assume stopped
           speedTimeoutRef.current = setTimeout(() => setCurrentSpeed(0), 4000);
-        } else {
-          // If device doesn't provide speed, we could calculate it from distance/time
-          // but for now we just keep it or set to 0 if stationary
         }
 
         setUserPos(newPos);
@@ -271,8 +279,10 @@ export default function MapPage() {
           if (prev.length > 0) {
             const last = prev[prev.length - 1];
             const d = haversineDistance(last[0], last[1], newPos[0], newPos[1]);
-            // Only add to distance if movement is significant (> 1m)
-            if (d > 0.001) {
+            
+            // Movement threshold increased to 3 meters (0.003 km) to prevent drift
+            // Also skip if speed is zero
+            if (d > 0.003 && rawSpeed > 0) {
               setDistance((old) => old + d);
               return [...prev, newPos];
             }
@@ -349,6 +359,12 @@ export default function MapPage() {
 
     recordWatchRef.current = navigator.geolocation.watchPosition(
       (pos) => {
+        // Stricter filtering for recording
+        const isStationary = pos.coords.speed != null && pos.coords.speed < 0.3;
+        const isPoorAccuracy = pos.coords.accuracy > 25;
+        
+        if (isStationary && isPoorAccuracy) return;
+
         const raw: RecordedPoint = {
           timestamp: Date.now(),
           lat: pos.coords.latitude,
@@ -367,16 +383,15 @@ export default function MapPage() {
           const last = prev[prev.length - 1];
           const dist = haversineDistance(last.lat, last.lon, filtered.lat, filtered.lon) * 1000;
 
-          // Only add point if it's more than 1 meter away after filtering
-          // Kalman Filter already reduces jitter significantly.
-          if (dist > 1.0) {
+          // Increased threshold to 3.0 meters for recording stability
+          if (dist > 3.0 && !isStationary) {
             return [...prev, filtered];
           }
 
-          // Update speed even if we don't add a point, for real-time display
+          // Update speed for real-time display even if stationary
           if (filtered.speed != null) {
             const updated = [...prev];
-            updated[updated.length - 1] = { ...updated[updated.length - 1], speed: filtered.speed };
+            updated[updated.length - 1] = { ...updated[updated.length - 1], speed: isStationary ? 0 : filtered.speed };
             return updated;
           }
 
