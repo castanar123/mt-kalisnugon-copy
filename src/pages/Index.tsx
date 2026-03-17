@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Mountain, Map, Bot, CalendarCheck, Shield, Navigation, WifiOff, ArrowUpRight, Wind, Droplets } from 'lucide-react';
@@ -7,14 +7,51 @@ import heroImage from '@/assets/mt-kalisungan-hero.jpg';
 import logo from '@/assets/logo.png';
 import TrailGallery from '@/components/landing/TrailGallery';
 import HikerReviews from '@/components/landing/HikerReviews';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 const features = [
-  { icon: Map, title: 'Interactive Trail Map', desc: 'Real-time topographic map with offline support, GPS tracking, and trail navigation for Mount Kalisungan.' },
-  { icon: Bot, title: 'AI Trail Assistant', desc: 'Get instant answers about trail conditions, weather, safety tips, and what to bring on your hike.' },
-  { icon: WifiOff, title: 'Offline AI Support', desc: 'AI assistant works without internet using locally cached data — weather, trails, safety info downloaded before your hike.' },
-  { icon: Navigation, title: 'Live Hiker Tracking', desc: 'Strava-like distance tracking with path deviation alerts and elevation profiles.' },
-  { icon: CalendarCheck, title: 'Smart Booking', desc: 'Book your hike with capacity management, QR code passes, and group coordination.' },
-  { icon: Shield, title: 'Safety First', desc: 'Emergency contacts, ranger check-ins, and real-time trail condition reports.' },
+  {
+    icon: Map,
+    title: 'Interactive Trail Map',
+    desc: 'Real-time topographic map with offline support, GPS tracking, and trail navigation for Mount Kalisungan.',
+    how: 'Explore official routes, points of interest, and zones. Switch map layers, cache tiles for offline, and locate yourself on the trail.',
+    cta: { label: 'Open map', to: '/map' },
+  },
+  {
+    icon: Bot,
+    title: 'AI Trail Assistant',
+    desc: 'Get instant answers about trail conditions, weather, safety tips, and what to bring on your hike.',
+    how: 'Ask questions in natural language. The assistant streams answers and can fall back to offline knowledge when there’s no signal.',
+    cta: { label: 'Ask the assistant', to: '/chat' },
+  },
+  {
+    icon: WifiOff,
+    title: 'Offline AI Support',
+    desc: 'AI assistant works without internet using locally cached data — weather, trails, safety info downloaded before your hike.',
+    how: 'When you’re offline, the app uses locally stored trail guidance and previously learned answers so you’re never stuck without help.',
+    cta: { label: 'Try offline mode', to: '/chat' },
+  },
+  {
+    icon: Navigation,
+    title: 'Live Hiker Tracking',
+    desc: 'Strava-like distance tracking with path deviation alerts and elevation profiles.',
+    how: 'Start tracking to record your route, pace, and time. Get a warning if you drift off-trail and see elevation along the selected path.',
+    cta: { label: 'Start tracking', to: '/map' },
+  },
+  {
+    icon: CalendarCheck,
+    title: 'Smart Booking',
+    desc: 'Book your hike with capacity management, QR code passes, and group coordination.',
+    how: 'Pick a date and reserve a slot. Rangers can manage capacity and validate hikers on-site with QR passes.',
+    cta: { label: 'Book now', to: '/booking' },
+  },
+  {
+    icon: Shield,
+    title: 'Safety First',
+    desc: 'Emergency contacts, ranger check-ins, and real-time trail condition reports.',
+    how: 'Built-in safety guidance, ranger updates, and quick access to help. Always register at the trailhead and follow posted advisories.',
+    cta: { label: 'View safety tips', to: '/chat' },
+  },
 ];
 
 type LiveWeather = {
@@ -135,6 +172,18 @@ function SummitPathOverlay() {
 
 export default function Index() {
   const { weather, loading, error } = useLiveWeather();
+  const navigate = useNavigate();
+  const [featureOpen, setFeatureOpen] = useState(false);
+  const [selectedFeature, setSelectedFeature] = useState<(typeof features)[number] | null>(null);
+
+  const openFeature = (f: (typeof features)[number]) => {
+    setSelectedFeature(f);
+    setFeatureOpen(true);
+  };
+
+  const handleLearnMore = () => {
+    document.getElementById('learn-more')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   return (
     <div className="min-h-screen">
@@ -191,12 +240,12 @@ export default function Index() {
 
               <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center lg:justify-start">
                 <Button asChild size="lg" className="text-base px-8 glow-primary">
-                  <Link to="/map">
-                    Start Trek <ArrowUpRight className="ml-2 h-4 w-4" />
+                  <Link to="/booking">
+                    Book Now <ArrowUpRight className="ml-2 h-4 w-4" />
                   </Link>
                 </Button>
-                <Button asChild variant="outline" size="lg" className="text-base px-8">
-                  <Link to="/booking">Book a Hike</Link>
+                <Button variant="outline" size="lg" className="text-base px-8" onClick={handleLearnMore}>
+                  Learn More
                 </Button>
               </div>
 
@@ -330,7 +379,7 @@ export default function Index() {
       </section>
 
       {/* Features */}
-      <section className="py-24 px-4">
+      <section id="learn-more" className="py-24 px-4 scroll-mt-24">
         <div className="container max-w-6xl mx-auto">
           <motion.div
             initial={{ opacity: 0 }}
@@ -350,18 +399,59 @@ export default function Index() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.1 }}
-                className="glass-card rounded-xl p-6 hover:border-primary/30 transition-all group"
+                className="glass-card rounded-xl p-6 hover:border-primary/30 transition-all group cursor-pointer hover:-translate-y-0.5 hover:shadow-xl"
+                role="button"
+                tabIndex={0}
+                onClick={() => openFeature(f)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') openFeature(f); }}
               >
                 <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
                   <f.icon className="h-6 w-6 text-primary" />
                 </div>
                 <h3 className="text-lg font-semibold mb-2">{f.title}</h3>
                 <p className="text-sm text-muted-foreground">{f.desc}</p>
+                <div className="mt-4 text-xs text-primary/90 font-medium">
+                  Click to learn how it works →
+                </div>
               </motion.div>
             ))}
           </div>
         </div>
       </section>
+
+      <Dialog open={featureOpen} onOpenChange={setFeatureOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{selectedFeature?.title ?? 'Feature'}</DialogTitle>
+            <DialogDescription>{selectedFeature?.desc}</DialogDescription>
+          </DialogHeader>
+
+          {selectedFeature?.how && (
+            <div className="text-sm text-muted-foreground leading-relaxed">
+              {selectedFeature.how}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setFeatureOpen(false)}
+            >
+              Close
+            </Button>
+            {selectedFeature?.cta && (
+              <Button
+                onClick={() => {
+                  setFeatureOpen(false);
+                  navigate(selectedFeature.cta.to);
+                }}
+              >
+                {selectedFeature.cta.label}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Gallery */}
       <TrailGallery />

@@ -10,6 +10,7 @@ import MapLegend from '@/components/map/MapLegend';
 import TrailStats from '@/components/map/TrailStats';
 import TrailNavigation from '@/components/map/TrailNavigation';
 import MapCompass from '@/components/map/MapCompass';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import 'leaflet/dist/leaflet.css';
 
 // Fix default marker icons
@@ -47,6 +48,20 @@ function LocateControl() {
       aria-label="Locate me"
     >
       <Locate className="h-4 w-4" />
+    </Button>
+  );
+}
+
+function OfflineCacheControl({ offlineReady, onOfflineCache }: { offlineReady: boolean; onOfflineCache: () => void }) {
+  return (
+    <Button
+      size="icon"
+      variant="outline"
+      className="absolute bottom-36 md:bottom-16 right-4 z-[1000] glass-card"
+      onClick={onOfflineCache}
+      aria-label={offlineReady ? 'Offline cached' : 'Save map offline'}
+    >
+      {offlineReady ? <WifiOff className="h-4 w-4" /> : <Wifi className="h-4 w-4" />}
     </Button>
   );
 }
@@ -190,84 +205,87 @@ export default function MapPage() {
 
       {/* Map */}
       <div className="flex-1 relative">
-        <MapContainer center={MT_KALISUNGAN_CENTER} zoom={DEFAULT_ZOOM} className="h-full w-full" zoomControl={false}>
-          <LayersControl position="topright">
-            <LayersControl.BaseLayer checked name="Street Map">
-              <TileLayer attribution='&copy; OpenStreetMap' url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            </LayersControl.BaseLayer>
-            <LayersControl.BaseLayer name="Topographic">
-              <TileLayer attribution='OpenTopoMap' url="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png" />
-            </LayersControl.BaseLayer>
-            <LayersControl.BaseLayer name="Satellite">
-              <TileLayer attribution='Esri' url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
-            </LayersControl.BaseLayer>
-          </LayersControl>
+        <ErrorBoundary title="Map failed to render">
+          <MapContainer center={MT_KALISUNGAN_CENTER} zoom={DEFAULT_ZOOM} className="h-full w-full" zoomControl={false}>
+            <LayersControl position="bottomright">
+              <LayersControl.BaseLayer checked name="Street Map">
+                <TileLayer attribution='&copy; OpenStreetMap' url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />
+              </LayersControl.BaseLayer>
+              <LayersControl.BaseLayer name="Topographic">
+                <TileLayer attribution='OpenTopoMap' url="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png" />
+              </LayersControl.BaseLayer>
+              <LayersControl.BaseLayer name="Satellite">
+                <TileLayer attribution='Esri' url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
+              </LayersControl.BaseLayer>
+            </LayersControl>
 
-          {TRAILS.map((t, i) => (
-            <Polyline
-              key={t.name}
-              positions={t.path}
-              pathOptions={{
-                color: t.color,
-                weight: i === selectedTrail ? 6 : 3,
-                opacity: i === selectedTrail ? 1 : 0.4,
-              }}
-            />
-          ))}
+            {TRAILS.map((t, i) => (
+              <Polyline
+                key={t.name}
+                positions={t.path}
+                pathOptions={{
+                  color: t.color,
+                  weight: i === selectedTrail ? 6 : 3,
+                  opacity: i === selectedTrail ? 1 : 0.4,
+                }}
+              />
+            ))}
 
-          <Marker
-            position={currentTrail.path[0]}
-            icon={new L.DivIcon({
-              html: `<div style="width:18px;height:18px;background:${currentTrail.color};border:3px solid #fff;border-radius:50%;box-shadow:0 0 12px ${currentTrail.color}80;display:flex;align-items:center;justify-content:center;font-size:8px;color:#fff;font-weight:bold;">S</div>`,
-              className: '',
-              iconSize: [18, 18],
-              iconAnchor: [9, 9],
-            })}
-          >
-            <Popup><strong>Start: {currentTrail.name}</strong></Popup>
-          </Marker>
-          <Marker
-            position={currentTrail.path[currentTrail.path.length - 1]}
-            icon={new L.DivIcon({
-              html: `<div style="width:18px;height:18px;background:${currentTrail.color};border:3px solid #fff;border-radius:50%;box-shadow:0 0 12px ${currentTrail.color}80;display:flex;align-items:center;justify-content:center;font-size:8px;color:#fff;font-weight:bold;">E</div>`,
-              className: '',
-              iconSize: [18, 18],
-              iconAnchor: [9, 9],
-            })}
-          >
-            <Popup><strong>End: {currentTrail.name}</strong></Popup>
-          </Marker>
-
-          {ZONES.map((z) => (
-            <Polygon key={z.name} positions={z.positions} pathOptions={{ color: z.color, fillColor: z.color, fillOpacity: 0.15, weight: 2, dashArray: '5 5' }}>
-              <Popup><strong>{z.name}</strong></Popup>
-            </Polygon>
-          ))}
-
-          {POI.map((p) => (
-            <Marker key={p.name} position={p.pos} icon={poiIcons[p.type] || poiIcons.checkpoint}>
-              <Popup><strong>{p.name}</strong><br /><span className="capitalize">{p.type}</span></Popup>
+            <Marker
+              position={currentTrail.path[0]}
+              icon={new L.DivIcon({
+                html: `<div style="width:18px;height:18px;background:${currentTrail.color};border:3px solid #fff;border-radius:50%;box-shadow:0 0 12px ${currentTrail.color}80;display:flex;align-items:center;justify-content:center;font-size:8px;color:#fff;font-weight:bold;">S</div>`,
+                className: '',
+                iconSize: [18, 18],
+                iconAnchor: [9, 9],
+              })}
+            >
+              <Popup><strong>Start: {currentTrail.name}</strong></Popup>
             </Marker>
-          ))}
+            <Marker
+              position={currentTrail.path[currentTrail.path.length - 1]}
+              icon={new L.DivIcon({
+                html: `<div style="width:18px;height:18px;background:${currentTrail.color};border:3px solid #fff;border-radius:50%;box-shadow:0 0 12px ${currentTrail.color}80;display:flex;align-items:center;justify-content:center;font-size:8px;color:#fff;font-weight:bold;">E</div>`,
+                className: '',
+                iconSize: [18, 18],
+                iconAnchor: [9, 9],
+              })}
+            >
+              <Popup><strong>End: {currentTrail.name}</strong></Popup>
+            </Marker>
 
-          {userPos && (
-            <>
-              <Marker position={userPos} icon={hikerIcon}>
-                <Popup>Your Position</Popup>
+            {ZONES.map((z) => (
+              <Polygon key={z.name} positions={z.positions} pathOptions={{ color: z.color, fillColor: z.color, fillOpacity: 0.15, weight: 2, dashArray: '5 5' }}>
+                <Popup><strong>{z.name}</strong></Popup>
+              </Polygon>
+            ))}
+
+            {POI.map((p) => (
+              <Marker key={p.name} position={p.pos} icon={poiIcons[p.type] || poiIcons.checkpoint}>
+                <Popup><strong>{p.name}</strong><br /><span className="capitalize">{p.type}</span></Popup>
               </Marker>
-              <Circle center={userPos} radius={15} pathOptions={{ color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.15 }} />
-            </>
-          )}
+            ))}
 
-          {trackPath.length > 1 && (
-            <Polyline positions={trackPath} pathOptions={{ color: '#22c55e', weight: 3, dashArray: '5 10' }} />
-          )}
+            {userPos && (
+              <>
+                <Marker position={userPos} icon={hikerIcon}>
+                  <Popup>Your Position</Popup>
+                </Marker>
+                <Circle center={userPos} radius={15} pathOptions={{ color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.15 }} />
+              </>
+            )}
 
+            {trackPath.length > 1 && (
+              <Polyline positions={trackPath} pathOptions={{ color: '#22c55e', weight: 3, dashArray: '5 10' }} />
+            )}
+
+          <OfflineCacheControl offlineReady={offlineReady} onOfflineCache={handleOfflineCache} />
           <LocateControl />
-        </MapContainer>
+          </MapContainer>
+        </ErrorBoundary>
 
         {/* Turn-by-turn navigation overlay */}
-        <div className="absolute top-4 left-4 z-[1000] w-72">
+        <div className="absolute top-4 left-4 z-[1000] w-[calc(100%-7.5rem)] md:w-72">
           <TrailNavigation
             trailPath={currentTrail.path}
             trailName={currentTrail.name}
@@ -279,11 +297,14 @@ export default function MapPage() {
         </div>
 
         {/* Compass */}
-        <div className="absolute top-4 right-16 z-[1000] w-24">
+        <div className="absolute top-24 right-4 md:top-4 md:right-16 z-[1000] w-24">
           <MapCompass userPos={userPos} />
         </div>
 
-        <MapLegend />
+        {/* Legend: lifted up on desktop to avoid elevation overlap */}
+        <MapLegend className="absolute bottom-44 left-4 z-[1000] hidden md:block" />
+        {/* Legend on mobile: tucked above bottom controls */}
+        <MapLegend className="absolute bottom-[11.5rem] left-4 z-[1000] md:hidden" />
 
         {/* Elevation Profile (collapsible overlay) */}
         <div className="absolute bottom-[5.5rem] md:bottom-4 left-4 right-4 z-[1000]">
@@ -298,12 +319,16 @@ export default function MapPage() {
         {/* Mobile bottom controls (collapsible) */}
         <div className="md:hidden absolute bottom-4 left-4 right-4 z-[1000]">
           <div className="glass-card-strong rounded-lg overflow-hidden">
-            <button
-              type="button"
+            <div
               onClick={() => setMobileControlsOpen((v) => !v)}
               className="w-full px-3 py-2 flex items-center gap-3 hover:bg-white/5 transition-colors"
               aria-expanded={mobileControlsOpen}
               aria-label={mobileControlsOpen ? 'Collapse controls' : 'Expand controls'}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') setMobileControlsOpen((v) => !v);
+              }}
             >
               <div className="flex-1 min-w-0 text-left">
                 <div className="flex items-center gap-2">
@@ -361,7 +386,7 @@ export default function MapPage() {
                   {mobileControlsOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
                 </div>
               </div>
-            </button>
+            </div>
 
             {mobileControlsOpen && (
               <div className="border-t border-border/30 px-3 py-2 space-y-2">

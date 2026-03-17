@@ -31,6 +31,14 @@ export default function ElevationProfile({ trailPath, trailName, trailColor, use
   const [error, setError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<boolean>(true);
 
+  const stats = useMemo(() => {
+    if (data.length === 0) return null;
+    const minElev = Math.min(...data.map((d) => d.elevation));
+    const maxElev = Math.max(...data.map((d) => d.elevation));
+    const gain = maxElev - minElev;
+    return { minElev, maxElev, gain };
+  }, [data]);
+
   useEffect(() => {
     if (trailPath.length < 2) return;
     fetchElevation();
@@ -81,13 +89,7 @@ export default function ElevationProfile({ trailPath, trailName, trailColor, use
   if (error || data.length === 0) {
     return null;
   }
-
-  const stats = useMemo(() => {
-    const minElev = Math.min(...data.map((d) => d.elevation));
-    const maxElev = Math.max(...data.map((d) => d.elevation));
-    const gain = maxElev - minElev;
-    return { minElev, maxElev, gain };
-  }, [data]);
+  if (!stats) return null;
 
   return (
     <div className="glass-card rounded-lg overflow-hidden">

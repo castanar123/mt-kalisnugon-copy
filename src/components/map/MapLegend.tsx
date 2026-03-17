@@ -1,8 +1,8 @@
 import { TRAILS } from '@/lib/map-data';
 
-export default function MapLegend() {
+export default function MapLegend({ className = '' }: { className?: string }) {
   return (
-    <div className="absolute bottom-4 left-4 z-[1000] glass-card rounded-lg p-3 text-xs space-y-1.5">
+    <div className={`glass-card rounded-lg p-3 text-xs space-y-1.5 ${className}`}>
       <div className="font-semibold text-foreground mb-1">Legend</div>
       {TRAILS.map((t) => (
         <div key={t.name} className="flex items-center gap-2">
