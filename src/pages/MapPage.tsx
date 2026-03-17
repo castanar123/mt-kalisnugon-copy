@@ -627,7 +627,6 @@ export default function MapPage() {
           distance={distance}
           elapsed={elapsed}
           currentSpeed={currentSpeed}
-          stepCount={0}
           gpsSignal={gpsSignal}
           selectedTrail={selectedTrail}
           offTrail={offTrail}
