@@ -91,8 +91,21 @@ export default function ElevationProfile({ trailPath, trailName, trailColor, use
   }
   if (!stats) return null;
 
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        onClick={() => setCollapsed(false)}
+        className="glass-card rounded-lg w-10 h-10 flex items-center justify-center border border-border/40 hover:bg-background/40 transition-colors"
+        aria-label={`Show ${trailName} elevation`}
+      >
+        <Mountain className="h-4 w-4" style={{ color: trailColor }} />
+      </button>
+    );
+  }
+
   return (
-    <div className="glass-card rounded-lg overflow-hidden">
+    <div className="glass-card rounded-lg overflow-hidden w-full max-w-2xl">
       <button
         type="button"
         onClick={() => setCollapsed((v) => !v)}
@@ -115,48 +128,46 @@ export default function ElevationProfile({ trailPath, trailName, trailColor, use
         </div>
       </button>
 
-      {!collapsed && (
-        <div className="px-4 pb-4">
-          <ResponsiveContainer width="100%" height={120}>
-            <AreaChart data={data} margin={{ top: 5, right: 5, bottom: 0, left: -20 }}>
-              <defs>
-                <linearGradient id={`elev-${trailName}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={trailColor} stopOpacity={0.4} />
-                  <stop offset="95%" stopColor={trailColor} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(155 15% 18%)" />
-              <XAxis
-                dataKey="distance"
-                fontSize={10}
-                stroke="hsl(150 10% 55%)"
-                tickFormatter={(v) => `${(v / 1000).toFixed(1)}km`}
-              />
-              <YAxis
-                fontSize={10}
-                stroke="hsl(150 10% 55%)"
-                tickFormatter={(v) => `${v}m`}
-                domain={[stats.minElev - 20, stats.maxElev + 20]}
-              />
-              <Tooltip
-                contentStyle={{
-                  background: 'hsl(160 12% 10%)',
-                  border: '1px solid hsl(155 15% 18%)',
-                  borderRadius: '8px',
-                  color: 'hsl(140 20% 92%)',
-                  fontSize: 12,
-                }}
-                formatter={(value: number) => [`${value}m`, 'Elevation']}
-                labelFormatter={(label: number) => `${(label / 1000).toFixed(2)} km`}
-              />
-              <Area type="monotone" dataKey="elevation" stroke={trailColor} fill={`url(#elev-${trailName})`} strokeWidth={2} />
-              {userProgress !== undefined && userProgress < data.length && (
-                <Area type="monotone" dataKey="elevation" stroke="#22c55e" strokeWidth={0} />
-              )}
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      )}
+      <div className="px-4 pb-4">
+        <ResponsiveContainer width="100%" height={120}>
+          <AreaChart data={data} margin={{ top: 5, right: 5, bottom: 0, left: -20 }}>
+            <defs>
+              <linearGradient id={`elev-${trailName}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={trailColor} stopOpacity={0.4} />
+                <stop offset="95%" stopColor={trailColor} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="hsl(155 15% 18%)" />
+            <XAxis
+              dataKey="distance"
+              fontSize={10}
+              stroke="hsl(150 10% 55%)"
+              tickFormatter={(v) => `${(v / 1000).toFixed(1)}km`}
+            />
+            <YAxis
+              fontSize={10}
+              stroke="hsl(150 10% 55%)"
+              tickFormatter={(v) => `${v}m`}
+              domain={[stats.minElev - 20, stats.maxElev + 20]}
+            />
+            <Tooltip
+              contentStyle={{
+                background: 'hsl(160 12% 10%)',
+                border: '1px solid hsl(155 15% 18%)',
+                borderRadius: '8px',
+                color: 'hsl(140 20% 92%)',
+                fontSize: 12,
+              }}
+              formatter={(value: number) => [`${value}m`, 'Elevation']}
+              labelFormatter={(label: number) => `${(label / 1000).toFixed(2)} km`}
+            />
+            <Area type="monotone" dataKey="elevation" stroke={trailColor} fill={`url(#elev-${trailName})`} strokeWidth={2} />
+            {userProgress !== undefined && userProgress < data.length && (
+              <Area type="monotone" dataKey="elevation" stroke="#22c55e" strokeWidth={0} />
+            )}
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

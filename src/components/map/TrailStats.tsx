@@ -1,8 +1,8 @@
 import { Button } from '@/components/ui/button';
-import { Pause, Play, AlertTriangle, Wifi, WifiOff, ChevronDown, ChevronUp } from 'lucide-react';
+import { Pause, Play, AlertTriangle, Download, CheckCircle2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { TRAILS } from '@/lib/map-data';
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
 
 interface TrailStatsProps {
   distance: number;
@@ -28,12 +28,7 @@ export default function TrailStats({
   onStartTracking, onStopTracking, onOfflineCache,
 }: TrailStatsProps) {
   const pace = elapsed > 0 && distance > 0 ? elapsed / 60 / distance : 0;
-  const [expanded, setExpanded] = useState(false);
-
-  // Collapse when switching trails to keep UI tidy.
-  useEffect(() => {
-    setExpanded(false);
-  }, [selectedTrail]);
+  const trailColor = useMemo(() => TRAILS[selectedTrail].color, [selectedTrail]);
 
   return (
     <motion.div
@@ -71,54 +66,29 @@ export default function TrailStats({
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-1 shrink-0">
-          <Button size="icon" variant="outline" onClick={onOfflineCache} aria-label={offlineReady ? 'Offline cached' : 'Save offline'}>
-            {offlineReady ? <WifiOff className="h-4 w-4" /> : <Wifi className="h-4 w-4" />}
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1"
+            onClick={onOfflineCache}
+            disabled={offlineReady}
+            aria-label={offlineReady ? 'Map downloaded for offline use' : 'Download map for offline use'}
+          >
+            {offlineReady ? <CheckCircle2 className="h-4 w-4" /> : <Download className="h-4 w-4" />}
+            {offlineReady ? 'Downloaded' : 'Download Map'}
           </Button>
           {tracking ? (
-            <Button size="icon" variant="destructive" onClick={onStopTracking} aria-label="Stop tracking">
-              <Pause className="h-4 w-4" />
+            <Button size="sm" variant="destructive" onClick={onStopTracking} aria-label="Stop tracking" className="gap-1">
+              <Pause className="h-4 w-4" /> Stop
             </Button>
           ) : (
-            <Button size="icon" onClick={onStartTracking} aria-label="Start hike">
-              <Play className="h-4 w-4" />
+            <Button size="sm" onClick={onStartTracking} aria-label="Start hike" className="gap-1" style={{ backgroundColor: trailColor }}>
+              <Play className="h-4 w-4" /> Start
             </Button>
           )}
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => setExpanded((v) => !v)}
-            aria-label={expanded ? 'Collapse details' : 'Expand details'}
-            aria-expanded={expanded}
-          >
-            {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </Button>
         </div>
       </div>
-
-      {/* Expanded details */}
-      {expanded && (
-        <div className="container mx-auto mt-2 flex items-center justify-between gap-2 flex-wrap">
-          <div className="text-xs text-muted-foreground">
-            Trail: <span className="font-medium text-foreground">{TRAILS[selectedTrail].name}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={onOfflineCache} className="gap-1">
-              {offlineReady ? <WifiOff className="h-3 w-3" /> : <Wifi className="h-3 w-3" />}
-              {offlineReady ? 'Cached' : 'Save Offline'}
-            </Button>
-            {tracking ? (
-              <Button size="sm" variant="destructive" onClick={onStopTracking} className="gap-1">
-                <Pause className="h-3 w-3" /> Stop
-              </Button>
-            ) : (
-              <Button size="sm" onClick={onStartTracking} className="gap-1">
-                <Play className="h-3 w-3" /> Start Hike
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
     </motion.div>
   );
 }

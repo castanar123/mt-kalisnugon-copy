@@ -153,6 +153,8 @@
   background: hsl(var(--card)) !important;
 }
 
+/* (Map uses custom in-app layer selector on mobile) */
+
 /* Aesthetic scrollbars (Chrome/Edge/Safari + Firefox) */
 html {
   scrollbar-width: thin;

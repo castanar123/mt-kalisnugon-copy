@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { MapContainer, TileLayer, Polyline, Polygon, Marker, Popup, useMap, Circle, LayersControl } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, Polygon, Marker, Popup, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { MT_KALISUNGAN_CENTER, DEFAULT_ZOOM, TRAILS, POI, ZONES, haversineDistance, distanceToTrail } from '@/lib/map-data';
 import { Button } from '@/components/ui/button';
-import { ChevronDown, ChevronUp, Locate, Pause, Play, Wifi, WifiOff, AlertTriangle } from 'lucide-react';
+import { ChevronDown, ChevronUp, Locate, Pause, Play, AlertTriangle, ChevronLeft, ChevronRight, Layers, Download, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import ElevationProfile from '@/components/map/ElevationProfile';
 import MapLegend from '@/components/map/MapLegend';
@@ -37,14 +37,22 @@ const poiIcons: Record<string, L.DivIcon> = {
   ranger: new L.DivIcon({ html: `<div style="width:12px;height:12px;background:#f97316;border:2px solid #fff;border-radius:2px;"></div>`, className: '', iconSize: [12, 12], iconAnchor: [6, 6] }),
 };
 
-function LocateControl() {
-  const map = useMap();
+function LocateControl({
+  map,
+  className,
+  bottomClassName,
+}: {
+  map: L.Map | null;
+  className?: string;
+  bottomClassName?: string;
+}) {
   return (
     <Button
       size="icon"
       variant="outline"
-      className="absolute bottom-24 md:bottom-4 right-4 z-[1000] glass-card"
-      onClick={() => map.locate({ setView: true, maxZoom: 17 })}
+      className={className ?? `absolute right-4 z-[1000] glass-card ${bottomClassName ?? 'bottom-[7.5rem]'} md:bottom-4`}
+      onClick={() => map?.locate({ setView: true, maxZoom: 17 })}
+      disabled={!map}
       aria-label="Locate me"
     >
       <Locate className="h-4 w-4" />
@@ -52,17 +60,67 @@ function LocateControl() {
   );
 }
 
-function OfflineCacheControl({ offlineReady, onOfflineCache }: { offlineReady: boolean; onOfflineCache: () => void }) {
+type BaseLayer = 'street' | 'topo' | 'sat';
+
+function MapInstanceBridge({ onReady }: { onReady: (map: L.Map) => void }) {
+  const map = useMap();
+  useEffect(() => {
+    onReady(map);
+  }, [map, onReady]);
+  return null;
+}
+
+function MapLayersControl({
+  value,
+  onChange,
+}: {
+  value: BaseLayer;
+  onChange: (v: BaseLayer) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
   return (
-    <Button
-      size="icon"
-      variant="outline"
-      className="absolute bottom-36 md:bottom-16 right-4 z-[1000] glass-card"
-      onClick={onOfflineCache}
-      aria-label={offlineReady ? 'Offline cached' : 'Save map offline'}
-    >
-      {offlineReady ? <WifiOff className="h-4 w-4" /> : <Wifi className="h-4 w-4" />}
-    </Button>
+    <div className="relative">
+      <Button
+        size="icon"
+        variant="outline"
+        className="glass-card"
+        onClick={() => setOpen((v) => !v)}
+        aria-label="Map layers"
+        aria-expanded={open}
+      >
+        <Layers className="h-4 w-4" />
+      </Button>
+
+      {open && (
+        <div className="absolute bottom-12 right-0 w-40 glass-card-strong rounded-lg p-2 border border-border/40">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground px-2 pb-1">
+            Layers
+          </div>
+          {(
+            [
+              { id: 'street', label: 'Street' },
+              { id: 'topo', label: 'Topographic' },
+              { id: 'sat', label: 'Satellite' },
+            ] as const
+          ).map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => {
+                onChange(opt.id);
+                setOpen(false);
+              }}
+              className={`w-full text-left px-2 py-1.5 rounded-md text-xs transition-colors ${
+                value === opt.id ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -82,6 +140,9 @@ function findNearestTrailIndex(userPos: [number, number], trailPath: L.LatLngTup
 
 export default function MapPage() {
   const [tracking, setTracking] = useState(false);
+  const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const [baseLayer, setBaseLayer] = useState<BaseLayer>('street');
   const [userPos, setUserPos] = useState<[number, number] | null>(null);
   const [trackPath, setTrackPath] = useState<[number, number][]>([]);
   const [distance, setDistance] = useState(0);
@@ -91,6 +152,7 @@ export default function MapPage() {
   const [offlineReady, setOfflineReady] = useState(false);
   const [userTrailProgress, setUserTrailProgress] = useState<number | undefined>(undefined);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
+  const [legendOpen, setLegendOpen] = useState(false);
   const watchRef = useRef<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -171,7 +233,7 @@ export default function MapPage() {
   }, [selectedTrail]);
 
   return (
-    <div className="h-screen pt-16 flex flex-col">
+    <div className={`h-screen pt-16 flex flex-col ${mobileControlsOpen ? 'map-mobile-controls-open' : ''}`}>
       {/* Desktop/tablet top bar */}
       <div className="hidden md:block">
         <TrailStats
@@ -206,18 +268,25 @@ export default function MapPage() {
       {/* Map */}
       <div className="flex-1 relative">
         <ErrorBoundary title="Map failed to render">
-          <MapContainer center={MT_KALISUNGAN_CENTER} zoom={DEFAULT_ZOOM} className="h-full w-full" zoomControl={false}>
-            <LayersControl position="bottomright">
-              <LayersControl.BaseLayer checked name="Street Map">
-                <TileLayer attribution='&copy; OpenStreetMap' url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />
-              </LayersControl.BaseLayer>
-              <LayersControl.BaseLayer name="Topographic">
-                <TileLayer attribution='OpenTopoMap' url="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png" />
-              </LayersControl.BaseLayer>
-              <LayersControl.BaseLayer name="Satellite">
-                <TileLayer attribution='Esri' url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
-              </LayersControl.BaseLayer>
-            </LayersControl>
+          <MapContainer
+            center={MT_KALISUNGAN_CENTER}
+            zoom={DEFAULT_ZOOM}
+            className="h-full w-full"
+            zoomControl={false}
+            attributionControl={false}
+            ref={mapRef as any}
+            whenReady={() => {}}
+          >
+            <MapInstanceBridge onReady={setMapInstance} />
+            {baseLayer === 'street' && (
+              <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            )}
+            {baseLayer === 'topo' && (
+              <TileLayer url="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png" />
+            )}
+            {baseLayer === 'sat' && (
+              <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
+            )}
 
             {TRAILS.map((t, i) => (
               <Polyline
@@ -278,9 +347,6 @@ export default function MapPage() {
             {trackPath.length > 1 && (
               <Polyline positions={trackPath} pathOptions={{ color: '#22c55e', weight: 3, dashArray: '5 10' }} />
             )}
-
-          <OfflineCacheControl offlineReady={offlineReady} onOfflineCache={handleOfflineCache} />
-          <LocateControl />
           </MapContainer>
         </ErrorBoundary>
 
@@ -301,19 +367,66 @@ export default function MapPage() {
           <MapCompass userPos={userPos} />
         </div>
 
-        {/* Legend: lifted up on desktop to avoid elevation overlap */}
-        <MapLegend className="absolute bottom-44 left-4 z-[1000] hidden md:block" />
-        {/* Legend on mobile: tucked above bottom controls */}
-        <MapLegend className="absolute bottom-[11.5rem] left-4 z-[1000] md:hidden" />
-
-        {/* Elevation Profile (collapsible overlay) */}
-        <div className="absolute bottom-[5.5rem] md:bottom-4 left-4 right-4 z-[1000]">
+        {/* Desktop right-side stack: layers + elevation + locate */}
+        <div className="hidden md:flex absolute right-4 bottom-4 z-[1100] flex-col items-end gap-2">
+          <MapLayersControl value={baseLayer} onChange={setBaseLayer} />
           <ElevationProfile
             trailPath={currentTrail.path}
             trailName={currentTrail.name}
             trailColor={currentTrail.color}
             userProgress={userTrailProgress}
           />
+          <LocateControl map={mapInstance} className="glass-card" />
+        </div>
+
+        {/* Desktop legend */}
+        <MapLegend className="absolute bottom-44 left-4 z-[1000] hidden md:block" />
+
+        {/* Mobile legend toggle (other side) */}
+        <div
+          className={`md:hidden absolute left-4 z-[1100] flex flex-col items-start gap-2 ${
+            mobileControlsOpen ? 'bottom-[14.5rem]' : 'bottom-[6.5rem]'
+          }`}
+        >
+          {!legendOpen ? (
+            <Button
+              size="icon"
+              variant="outline"
+              className="glass-card"
+              onClick={() => setLegendOpen(true)}
+              aria-label="Open legend"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          ) : (
+            <div className="relative">
+              <MapLegend className="w-56" />
+              <button
+                type="button"
+                onClick={() => setLegendOpen(false)}
+                aria-label="Close legend"
+                className="absolute -left-2 -top-2 h-7 w-7 rounded-full glass-card flex items-center justify-center"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Mobile right-side stack: ONLY 3 controls (layers, elevation, locate) */}
+        <div
+          className={`md:hidden absolute right-4 z-[1100] flex flex-col items-end gap-2 ${
+            mobileControlsOpen ? 'bottom-[14.5rem]' : 'bottom-[6.5rem]'
+          }`}
+        >
+          <MapLayersControl value={baseLayer} onChange={setBaseLayer} />
+          <ElevationProfile
+            trailPath={currentTrail.path}
+            trailName={currentTrail.name}
+            trailColor={currentTrail.color}
+            userProgress={userTrailProgress}
+          />
+          <LocateControl map={mapInstance} className="glass-card" />
         </div>
 
         {/* Mobile bottom controls (collapsible) */}
@@ -360,9 +473,10 @@ export default function MapPage() {
                   size="icon"
                   variant="outline"
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleOfflineCache(); }}
-                  aria-label={offlineReady ? 'Offline cached' : 'Save offline'}
+                  aria-label={offlineReady ? 'Map downloaded for offline use' : 'Download map for offline use'}
+                  disabled={offlineReady}
                 >
-                  {offlineReady ? <WifiOff className="h-4 w-4" /> : <Wifi className="h-4 w-4" />}
+                  {offlineReady ? <CheckCircle2 className="h-4 w-4" /> : <Download className="h-4 w-4" />}
                 </Button>
                 {tracking ? (
                   <Button
@@ -411,9 +525,9 @@ export default function MapPage() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <Button size="sm" variant="outline" onClick={handleOfflineCache} className="gap-1 flex-1">
-                    {offlineReady ? <WifiOff className="h-3 w-3" /> : <Wifi className="h-3 w-3" />}
-                    {offlineReady ? 'Cached' : 'Save Offline'}
+                  <Button size="sm" variant="outline" onClick={handleOfflineCache} className="gap-1 flex-1" disabled={offlineReady}>
+                    {offlineReady ? <CheckCircle2 className="h-3 w-3" /> : <Download className="h-3 w-3" />}
+                    {offlineReady ? 'Downloaded' : 'Download Map'}
                   </Button>
                   {tracking ? (
                     <Button size="sm" variant="destructive" onClick={stopTracking} className="gap-1 flex-1">
