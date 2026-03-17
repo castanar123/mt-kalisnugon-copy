@@ -8,7 +8,7 @@ interface TrailStatsProps {
   distance: number;
   elapsed: number;
   currentSpeed: number | null;
-  stepCount: number;
+  gpsSignal: 'Strong' | 'Medium' | 'Weak' | 'None';
   selectedTrail: number;
   offTrail: boolean;
   tracking: boolean;
@@ -26,7 +26,7 @@ function formatTime(s: number) {
 }
 
 export default function TrailStats({
-  distance, elapsed, currentSpeed, stepCount, selectedTrail, offTrail, tracking, offlineReady,
+  distance, elapsed, currentSpeed, gpsSignal, selectedTrail, offTrail, tracking, offlineReady,
   onStartTracking, onStopTracking, onOfflineCache,
 }: TrailStatsProps) {
   const avgPace = elapsed > 0 && distance > 0 ? elapsed / 60 / distance : 0;
@@ -34,6 +34,20 @@ export default function TrailStats({
   const displayPace = realTimePace > 0 ? realTimePace : avgPace;
 
   const trailColor = useMemo(() => TRAILS[selectedTrail].color, [selectedTrail]);
+
+  const GpsIndicator = () => {
+    const color = gpsSignal === 'Strong' ? 'text-success' : gpsSignal === 'Medium' ? 'text-warning' : 'text-destructive';
+    const bars = gpsSignal === 'Strong' ? 3 : gpsSignal === 'Medium' ? 2 : 1;
+    if (gpsSignal === 'None') return null;
+
+    return (
+      <div className={`flex items-end gap-0.5 ${color}`}>
+        <div className={`h-2 w-1 rounded-sm ${bars >= 1 ? 'bg-current' : 'bg-muted/50'}`} />
+        <div className={`h-3 w-1 rounded-sm ${bars >= 2 ? 'bg-current' : 'bg-muted/50'}`} />
+        <div className={`h-4 w-1 rounded-sm ${bars >= 3 ? 'bg-current' : 'bg-muted/50'}`} />
+      </div>
+    );
+  };
 
   return (
     <motion.div
@@ -57,6 +71,7 @@ export default function TrailStats({
               )}
             </div>
             <div className="flex items-baseline gap-3 text-xs text-muted-foreground">
+              <GpsIndicator />
               <span className="whitespace-nowrap">
                 <span className="text-foreground font-semibold">{distance.toFixed(2)}</span> km
               </span>
@@ -66,9 +81,7 @@ export default function TrailStats({
               <span className="whitespace-nowrap">
                 <span className="text-foreground font-semibold">{displayPace > 0 ? displayPace.toFixed(1) : '--'}</span> min/km
               </span>
-              <span className="whitespace-nowrap">
-                <span className="text-foreground font-semibold">{stepCount}</span> steps
-              </span>
+
             </div>
           </div>
         </div>

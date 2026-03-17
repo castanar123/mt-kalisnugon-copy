@@ -12,7 +12,7 @@ import TrailNavigation from '@/components/map/TrailNavigation';
 import MapCompass from '@/components/map/MapCompass';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useAuth } from '@/hooks/useAuth';
-import { usePedometer } from '@/hooks/usePedometer';
+
 import 'leaflet/dist/leaflet.css';
 
 // Fix default marker icons
@@ -147,18 +147,22 @@ export default function MapPage() {
   const [baseLayer, setBaseLayer] = useState<BaseLayer>('street');
   const [userPos, setUserPos] = useState<[number, number] | null>(null);
   const [displayPos, setDisplayPos] = useState<[number, number] | null>(null);
-  const [trackPath, setTrackPath] = useState<[number, number][]>([]);
   const [distance, setDistance] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [currentSpeed, setCurrentSpeed] = useState<number | null>(null);
   const [offTrail, setOffTrail] = useState(false);
+  const [gpsSignal, setGpsSignal] = useState<'Strong' | 'Medium' | 'Weak' | 'None'>('None');
   const [selectedTrail, setSelectedTrail] = useState(0);
   const [offlineReady, setOfflineReady] = useState(false);
   const [userTrailProgress, setUserTrailProgress] = useState<number | undefined>(undefined);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [legendOpen, setLegendOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [isAccuracyMode, setIsAccuracyMode] = useState(false);
+  const [isGpsTestMode, setIsGpsTestMode] = useState(false);
+  type FilteredPoint = { lat: number; lon: number; };
+  const [rawGpsPoints, setRawGpsPoints] = useState<RecordedPoint[]>([]);
+  const [filteredPath, setFilteredPath] = useState<FilteredPoint[]>([]);
+
   const [recordedPoints, setRecordedPoints] = useState<RecordedPoint[]>([]);
   const recordWatchRef = useRef<number | null>(null);
   const watchRef = useRef<number | null>(null);
@@ -166,8 +170,7 @@ export default function MapPage() {
   const { role } = useAuth();
   const isRanger = role === 'ranger';
 
-  // Advanced Pedometer Hook
-  const { stepCount, isMoving: isPhysicallyMoving, start: startPedometer, stop: stopPedometer, reset: resetPedometer } = usePedometer();
+
 
   // Kalman Filter State for high-accuracy movement tracking
   const kalmanStateRef = useRef<{
@@ -221,18 +224,21 @@ export default function MapPage() {
   };
 
   /**
-   * Kalman Filter implementation for GPS smoothing
-   * This algorithm balances the "noise" of GPS readings against the "predicted" position.
+   * Dynamic Kalman Filter for GPS smoothing.
+   * Adjusts filtering based on speed and GPS accuracy for more intelligent path tracking.
    */
-  const applyKalmanFilter = useCallback((raw: RecordedPoint): RecordedPoint => {
-    const minAccuracy = 1.0; // Assume 1m is the best possible accuracy
-    const processNoise = 0.0000001; // Lowered for better stationary stability
+  const applyKalmanFilter = useCallback((raw: RecordedPoint, speed: number): RecordedPoint => {
+    const minAccuracy = 1.0;
     
+    // Dynamically adjust process noise based on speed. Higher speed = more movement expected.
+    const speedMps = speed / 3.6;
+    const processNoise = 0.0000001 + (speedMps * 0.0000005);
+
     if (!kalmanStateRef.current) {
       kalmanStateRef.current = {
         lat: raw.lat,
         lon: raw.lon,
-        variance: raw.accuracy || 10,
+        variance: (raw.accuracy || 10) ** 2, // Use variance, not std deviation
         lastTimestamp: raw.timestamp
       };
       return raw;
@@ -240,20 +246,18 @@ export default function MapPage() {
 
     const state = kalmanStateRef.current;
     const dt = (raw.timestamp - state.lastTimestamp) / 1000.0;
-    
-    // Ignore updates that are too frequent (less than 500ms) to avoid noise amplification
-    if (dt < 0.5) return { ...raw, lat: state.lat, lon: state.lon };
+    if (dt <= 0) return { ...raw, lat: state.lat, lon: state.lon };
 
-    const currentAccuracy = Math.max(raw.accuracy || 10, minAccuracy);
+    // Dynamically adjust measurement noise based on GPS accuracy.
+    const measurementNoise = Math.max(raw.accuracy || 10, minAccuracy) ** 2;
 
-    // 1. Prediction Step: Assume position stays same (process noise increases variance)
-    // We scale process noise by dt to account for time between updates
+    // Prediction Step
     const predictedVariance = state.variance + processNoise * dt;
 
-    // 2. Update Step: Calculate Kalman Gain
-    const kalmanGain = predictedVariance / (predictedVariance + currentAccuracy);
+    // Update Step (Kalman Gain)
+    const kalmanGain = predictedVariance / (predictedVariance + measurementNoise);
 
-    // 3. New State: Blend prediction with measurement
+    // New State
     const filteredLat = state.lat + kalmanGain * (raw.lat - state.lat);
     const filteredLon = state.lon + kalmanGain * (raw.lon - state.lon);
     const filteredVariance = (1 - kalmanGain) * predictedVariance;
@@ -265,28 +269,26 @@ export default function MapPage() {
       lastTimestamp: raw.timestamp
     };
 
-    return {
-      ...raw,
-      lat: filteredLat,
-      lon: filteredLon
-    };
+    return { ...raw, lat: filteredLat, lon: filteredLon };
   }, []);
 
   const speedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const startTracking = useCallback(() => {
-    if (!navigator.geolocation) { toast.error('Geolocation not supported'); return; }
+  const startTracking = () => {
     setTracking(true);
-    setTrackPath([]);
-    setDistance(0);
-    setElapsed(0);
-    setCurrentSpeed(0);
-    resetPedometer();
-    startPedometer();
-    kalmanStateRef.current = null; // Reset Kalman filter
-    timerRef.current = setInterval(() => setElapsed((s) => s + 1), 1000);
+  };
 
-    const handleNewPosition = (pos: GeolocationPosition) => {
+  const handleNewPosition = useCallback((pos: GeolocationPosition) => {
+      // Step 1: GPS Signal Quality Filter
+      const accuracy = pos.coords.accuracy;
+      const signal: typeof gpsSignal = accuracy <= 10 ? 'Strong' : accuracy <= 30 ? 'Medium' : 'Weak';
+      setGpsSignal(signal);
+
+      if (signal === 'Weak') {
+        console.warn(`GPS signal is weak (accuracy: ${accuracy}m), discarding point.`);
+        return; // Discard points with weak signal
+      }
+
       // Velocity-gating: If accuracy is poor (> 20m) and speed is zero, skip update
       if (pos.coords.accuracy > 20 && (pos.coords.speed === 0 || pos.coords.speed == null)) {
         return;
@@ -297,13 +299,18 @@ export default function MapPage() {
         lat: pos.coords.latitude,
         lon: pos.coords.longitude,
         accuracy: pos.coords.accuracy,
+        speed: pos.coords.speed,
+        heading: pos.coords.heading,
+        alt: pos.coords.altitude,
       };
+      setRawGpsPoints(prev => [...prev, raw]);
 
-      const filtered = applyKalmanFilter(raw);
+      const rawSpeed = pos.coords.speed != null && pos.coords.speed > 0.3 ? pos.coords.speed * 3.6 : 0;
+      
+      const filtered = applyKalmanFilter(raw, rawSpeed);
       const newPos: [number, number] = [filtered.lat, filtered.lon];
       
       // Update current speed with dead-zone (reported in m/s, convert to km/h)
-      const rawSpeed = pos.coords.speed != null && pos.coords.speed > 0.3 ? pos.coords.speed * 3.6 : 0;
       setCurrentSpeed(rawSpeed);
 
       // Clear any pending "set to zero" timeout
@@ -314,20 +321,20 @@ export default function MapPage() {
       }
 
       setUserPos(newPos);
-      setTrackPath((prev) => {
+      setFilteredPath((prev) => {
         if (prev.length > 0) {
           const last = prev[prev.length - 1];
-          const d = haversineDistance(last[0], last[1], newPos[0], newPos[1]);
+          const d = haversineDistance(last.lat, last.lon, newPos[0], newPos[1]);
           
-          // Movement threshold + Motion Aware: Only record if speed > 0 AND physically moving
-          // or if it's a very significant jump (to catch vehicles)
-          if ((d > 0.003 && rawSpeed > 0 && isPhysicallyMoving) || d > 0.05) {
+          // Step 3: Distance Thresholding
+          // If moving > 3m and speed > 1km/h, or a large jump (> 50m)
+          if ((d > 0.003 && rawSpeed > 1.0) || d > 0.05) {
             setDistance((old) => old + d);
-            return [...prev, newPos];
+            return [...prev, { lat: newPos[0], lon: newPos[1] }];
           }
           return prev;
         }
-        return [newPos];
+        return [{ lat: newPos[0], lon: newPos[1] }];
       });
 
       // Track progress along selected trail
@@ -336,47 +343,72 @@ export default function MapPage() {
 
       // Check if off-trail (> 100m from nearest trail point)
       const minDist = Math.min(...TRAILS.map((t) => distanceToTrail(newPos[0], newPos[1], t.path)));
-      if (!isAccuracyMode && minDist > 0.1) {
+      if (!isGpsTestMode && minDist > 0.1) {
         setOffTrail(true);
         toast.warning('You are off the marked trail!', { id: 'off-trail' });
       } else {
         setOffTrail(false);
       }
-    };
+    }, [selectedTrail, applyKalmanFilter, isGpsTestMode, handleOfflineCache]);
 
-    const handleError = (err: GeolocationPositionError) => {
-      if (err.code !== 3) {
-        toast.error(`GPS Error: ${err.message}`);
-      } else {
-        console.warn('GPS Timeout: Still waiting for signal...');
-      }
-    };
-
-    const options = { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 };
-
-    watchRef.current = navigator.geolocation.watchPosition(handleNewPosition, handleError, options);
-
-    // High-frequency polling heartbeat for web browsers (every 1s)
-    const pollingInterval = setInterval(() => {
-      navigator.geolocation.getCurrentPosition(handleNewPosition, () => {}, options);
-    }, 1000);
-
-    // Store polling interval in a ref to clear it later
-    (watchRef as any).polling = pollingInterval;
-
-  }, [selectedTrail, isAccuracyMode, applyKalmanFilter, resetPedometer, startPedometer, isPhysicallyMoving]);
-
-  const stopTracking = useCallback(() => {
-    setTracking(false);
-    stopPedometer();
-    if (watchRef.current !== null) {
-      navigator.geolocation.clearWatch(watchRef.current);
-      if ((watchRef as any).polling) clearInterval((watchRef as any).polling);
+  const handleError = useCallback((err: GeolocationPositionError) => {
+    if (err.code === err.PERMISSION_DENIED) {
+      toast.error('GPS Error: Location permission denied.');
+      stopTracking();
+    } else if (err.code !== 3) { // Ignore timeout errors, they are frequent
+      toast.error(`GPS Error: ${err.message}`);
+    } else {
+      console.warn('GPS Timeout: Still waiting for signal...');
     }
-    if (timerRef.current) clearInterval(timerRef.current);
-  }, [stopPedometer]);
+  }, []);
 
-  useEffect(() => () => { stopTracking(); }, [stopTracking]);
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (!tracking) return;
+
+    const adjustPollingRate = (speedKmh: number) => {
+      if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+      
+      const interval = speedKmh > 5 ? 3000 : 8000; // 3s if fast, 8s if slow
+      
+      pollingIntervalRef.current = setInterval(() => {
+        navigator.geolocation.getCurrentPosition(handleNewPosition, handleError, { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 });
+      }, interval);
+    };
+
+    adjustPollingRate(currentSpeed || 0);
+
+    return () => {
+      if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+    };
+  }, [tracking, currentSpeed, handleNewPosition]);
+
+  const stopTracking = () => {
+    setTracking(false);
+    setGpsSignal('None');
+    // The `useEffect` hooks for tracking and polling will handle clearing their respective intervals/watches
+    // when the `tracking` state becomes false. This function just initiates that state change.
+  }, []);
+
+  useEffect(() => {
+    if (tracking) {
+      if (!navigator.geolocation) { toast.error('Geolocation not supported'); return; }
+      setRawGpsPoints([]);
+      setFilteredPath([]);
+      setDistance(0);
+      setElapsed(0);
+      setCurrentSpeed(0);
+      kalmanStateRef.current = null; // Reset Kalman filter
+      timerRef.current = setInterval(() => setElapsed((s) => s + 1), 1000);
+
+      // watchPosition was removed in favor of the adaptive polling useEffect.
+      // This effect now only manages state resets and the elapsed timer.
+      return () => {
+        if (timerRef.current) clearInterval(timerRef.current);
+      };
+    }
+  }, [tracking]);
 
   const handleOfflineCache = async () => {
     toast.info('Caching map tiles for offline use...');
@@ -415,14 +447,22 @@ export default function MapPage() {
       return;
     }
     setRecordedPoints([]);
-    resetPedometer();
-    startPedometer();
     kalmanStateRef.current = null; // Reset Kalman filter
     setIsRecording(true);
 
     const handleNewRecordPoint = (pos: GeolocationPosition) => {
-      // Stricter filtering for recording: use isPhysicallyMoving
-      const isStationary = (pos.coords.speed != null && pos.coords.speed < 0.3) || !isPhysicallyMoving;
+      // Step 1: GPS Signal Quality Filter
+      const accuracy = pos.coords.accuracy;
+      const signal: typeof gpsSignal = accuracy <= 10 ? 'Strong' : accuracy <= 30 ? 'Medium' : 'Weak';
+      setGpsSignal(signal);
+
+      if (signal === 'Weak') {
+        console.warn(`Recording: GPS signal is weak (accuracy: ${accuracy}m), discarding point.`);
+        return; // Discard points with weak signal
+      }
+
+      const rawSpeed = pos.coords.speed != null && pos.coords.speed > 0.3 ? pos.coords.speed * 3.6 : 0;
+      const isStationary = rawSpeed < 1.0; // Stationary if speed < 1km/h
       const isPoorAccuracy = pos.coords.accuracy > 25;
       
       if (isStationary && isPoorAccuracy) return;
@@ -437,7 +477,7 @@ export default function MapPage() {
         heading: pos.coords.heading,
       };
 
-      const filtered = applyKalmanFilter(raw);
+      const filtered = applyKalmanFilter(raw, rawSpeed);
 
       setRecordedPoints((prev) => {
         if (prev.length === 0) return [filtered];
@@ -446,8 +486,8 @@ export default function MapPage() {
         const dist = haversineDistance(last.lat, last.lon, filtered.lat, filtered.lon) * 1000;
 
         // Increased threshold to 3.0 meters for recording stability
-        // Requires physical movement to be recorded
-        if (dist > 3.0 && isPhysicallyMoving) {
+        // Only record if moving or significant jump
+        if (dist > 3.0 && !isStationary) {
           return [...prev, filtered];
         }
 
@@ -482,17 +522,17 @@ export default function MapPage() {
     // Store polling interval in a ref
     (recordWatchRef as any).polling = pollingInterval;
 
-  }, [applyKalmanFilter, isPhysicallyMoving, resetPedometer, startPedometer]);
+  }, [applyKalmanFilter]);
 
   const stopRecording = useCallback(() => {
     setIsRecording(false);
-    stopPedometer();
+    setGpsSignal('None');
     if (recordWatchRef.current != null) {
       navigator.geolocation.clearWatch(recordWatchRef.current);
       if ((recordWatchRef as any).polling) clearInterval((recordWatchRef as any).polling);
       recordWatchRef.current = null;
     }
-  }, [stopPedometer]);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -507,19 +547,19 @@ export default function MapPage() {
       stopRecording();
     } else {
       // turning on recording turns off accuracy test for now
-      setIsAccuracyMode(false);
+      setIsGpsTestMode(false);
       startRecording();
     }
   };
 
-  const toggleAccuracyMode = () => {
-    // accuracy mode reuses same recorded buffer, but we could later add deviation metrics
-    if (isAccuracyMode) {
-      setIsAccuracyMode(false);
-      stopRecording();
+  const toggleGpsTestMode = () => {
+    if (isGpsTestMode) {
+      setIsGpsTestMode(false);
+      stopRecording(); // Stop the recording when exiting test mode
     } else {
-      setIsAccuracyMode(true);
-      startRecording();
+      if (isRecording) stopRecording(); // Ensure normal recording is stopped first
+      setIsGpsTestMode(true);
+      startRecording(); // Use the recording engine for testing
     }
   };
 
@@ -587,7 +627,8 @@ export default function MapPage() {
           distance={distance}
           elapsed={elapsed}
           currentSpeed={currentSpeed}
-          stepCount={stepCount}
+          stepCount={0}
+          gpsSignal={gpsSignal}
           selectedTrail={selectedTrail}
           offTrail={offTrail}
           tracking={tracking}
@@ -610,9 +651,9 @@ export default function MapPage() {
           </Button>
           <Button
             size="sm"
-            variant={isAccuracyMode ? 'secondary' : 'ghost'}
+            variant={isGpsTestMode ? 'secondary' : 'ghost'}
             className="gap-1"
-            onClick={toggleAccuracyMode}
+            onClick={toggleGpsTestMode}
           >
             Test GPS Accuracy
           </Button>
@@ -723,9 +764,14 @@ export default function MapPage() {
               </>
             )}
 
-            {trackPath.length > 1 && (
-              <Polyline positions={trackPath} pathOptions={{ color: '#22c55e', weight: 3, dashArray: '5 10' }} />
+            {filteredPath.length > 1 && (
+              <Polyline positions={filteredPath.map(p => [p.lat, p.lon])} pathOptions={{ color: '#22c55e', weight: 5 }} />
             )}
+
+            {/* Raw GPS data for debugging (optional) */}
+            {/* {rawGpsPoints.length > 1 && (
+              <Polyline positions={rawGpsPoints.map(p => [p.lat, p.lon])} pathOptions={{ color: '#f97316', weight: 2, dashArray: '5, 10' }} />
+            )} */}
           </MapContainer>
         </ErrorBoundary>
 
@@ -742,10 +788,10 @@ export default function MapPage() {
         </div>
 
         {/* Ranger recording / accuracy badge + stats */}
-        {isRanger && (isRecording || isAccuracyMode) && (
+        {isRanger && (isRecording || isGpsTestMode) && (
           <div className="absolute top-24 left-4 z-[1000] glass-card rounded-lg px-3 py-2 text-xs flex flex-col gap-1 max-w-xs">
             <div className="font-semibold">
-              {isAccuracyMode ? 'Accuracy Test Active' : 'Recording Trail'}
+              {isGpsTestMode ? 'Accuracy Test Active' : 'Recording Trail'}
             </div>
             <div className="flex flex-wrap gap-3 text-muted-foreground">
               <span>Dist: <span className="text-foreground font-medium">{formatDistance(recordDistanceMeters)}</span></span>
@@ -860,10 +906,13 @@ export default function MapPage() {
                   <span>
                     <span className="text-foreground font-semibold">{displayPace > 0 ? displayPace.toFixed(1) : '--'}</span> min/km
                   </span>
-                  <span>
-                    <span className="text-foreground font-semibold">{stepCount}</span> steps
-                  </span>
+
                 </div>
+                {gpsSignal !== 'None' && (
+                  <div className="text-[10px] text-muted-foreground">
+                    GPS Signal: <span className={gpsSignal === 'Strong' ? 'text-success' : gpsSignal === 'Medium' ? 'text-warning' : 'text-destructive'}>{gpsSignal}</span>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center gap-1 shrink-0">
@@ -942,19 +991,20 @@ export default function MapPage() {
                     <div className="flex items-center gap-2">
                       <Button
                         size="sm"
-                        variant={isRecording ? 'destructive' : 'outline'}
+                        variant={isRecording && !isGpsTestMode ? 'destructive' : 'outline'}
                         className="gap-1 flex-1"
                         onClick={toggleRecording}
+                        disabled={isGpsTestMode}
                       >
-                        {isRecording ? 'Stop Recording' : 'Record Trail'}
+                        {isRecording && !isGpsTestMode ? 'Stop Recording' : 'Record Trail'}
                       </Button>
                       <Button
                         size="sm"
-                        variant={isAccuracyMode ? 'secondary' : 'ghost'}
+                        variant={isGpsTestMode ? 'secondary' : 'ghost'}
                         className="gap-1 flex-1"
-                        onClick={toggleAccuracyMode}
+                        onClick={toggleGpsTestMode}
                       >
-                        Test Accuracy
+                        {isGpsTestMode ? 'Stop Test' : 'Test Accuracy'}
                       </Button>
                     </div>
                   </div>
