@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { MapContainer, TileLayer, Polyline, Polygon, Marker, Popup, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { MT_KALISUNGAN_CENTER, DEFAULT_ZOOM, TRAILS, POI, ZONES, haversineDistance, distanceToTrail } from '@/lib/map-data';
@@ -11,6 +11,7 @@ import TrailStats from '@/components/map/TrailStats';
 import TrailNavigation from '@/components/map/TrailNavigation';
 import MapCompass from '@/components/map/MapCompass';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { useAuth } from '@/hooks/useAuth';
 import 'leaflet/dist/leaflet.css';
 
 // Fix default marker icons
@@ -153,8 +154,51 @@ export default function MapPage() {
   const [userTrailProgress, setUserTrailProgress] = useState<number | undefined>(undefined);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [legendOpen, setLegendOpen] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isAccuracyMode, setIsAccuracyMode] = useState(false);
+  const [recordedPoints, setRecordedPoints] = useState<RecordedPoint[]>([]);
+  const recordTimerRef = useRef<number | null>(null);
+  const lastFilteredRef = useRef<RecordedPoint | null>(null);
   const watchRef = useRef<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { role } = useAuth();
+  const isRanger = role === 'ranger';
+
+  type RecordedPoint = {
+    timestamp: number;
+    lat: number;
+    lon: number;
+    alt?: number | null;
+    heading?: number | null;
+  };
+
+  const applyPositionFilter = useCallback(
+    (raw: RecordedPoint): RecordedPoint => {
+      const prev = lastFilteredRef.current;
+      if (!prev) {
+        lastFilteredRef.current = raw;
+        return raw;
+      }
+
+      const alpha = 0.6;
+      const lat = alpha * raw.lat + (1 - alpha) * prev.lat;
+      const lon = alpha * raw.lon + (1 - alpha) * prev.lon;
+
+      const headingAlpha = 0.5;
+      let heading = raw.heading ?? prev.heading ?? null;
+      if (raw.heading != null && prev.heading != null) {
+        const rawH = raw.heading;
+        const prevH = prev.heading;
+        const delta = ((((rawH - prevH) + 540) % 360) - 180); // shortest path
+        heading = (prevH + headingAlpha * delta + 360) % 360;
+      }
+
+      const filtered = { ...raw, lat, lon, heading };
+      lastFilteredRef.current = filtered;
+      return filtered;
+    },
+    []
+  );
 
   const startTracking = useCallback(() => {
     if (!navigator.geolocation) { toast.error('Geolocation not supported'); return; }
@@ -232,6 +276,113 @@ export default function MapPage() {
     setMobileControlsOpen(false);
   }, [selectedTrail]);
 
+  const startRecording = useCallback(() => {
+    if (!navigator.geolocation) {
+      toast.error('Geolocation not supported');
+      return;
+    }
+    setRecordedPoints([]);
+    lastFilteredRef.current = null;
+    setIsRecording(true);
+
+    recordTimerRef.current = window.setInterval(() => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const raw: RecordedPoint = {
+            timestamp: Date.now(),
+            lat: pos.coords.latitude,
+            lon: pos.coords.longitude,
+            alt: pos.coords.altitude,
+            heading: null,
+          };
+          const filtered = applyPositionFilter(raw);
+          setRecordedPoints((prev) => [...prev, filtered]);
+        },
+        () => {
+          // ignore individual read errors for now
+        },
+        { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
+      );
+    }, 1000);
+  }, [applyPositionFilter]);
+
+  const stopRecording = useCallback(() => {
+    setIsRecording(false);
+    if (recordTimerRef.current != null) {
+      clearInterval(recordTimerRef.current);
+      recordTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (recordTimerRef.current != null) {
+        clearInterval(recordTimerRef.current);
+      }
+    };
+  }, []);
+
+  const toggleRecording = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      // turning on recording turns off accuracy test for now
+      setIsAccuracyMode(false);
+      startRecording();
+    }
+  };
+
+  const toggleAccuracyMode = () => {
+    // accuracy mode reuses same recorded buffer, but we could later add deviation metrics
+    if (isAccuracyMode) {
+      setIsAccuracyMode(false);
+      stopRecording();
+    } else {
+      setIsAccuracyMode(true);
+      startRecording();
+    }
+  };
+
+  const recordDistanceMeters = useMemo(() => {
+    if (recordedPoints.length < 2) return 0;
+    let d = 0;
+    for (let i = 1; i < recordedPoints.length; i++) {
+      d += haversineDistance(
+        recordedPoints[i - 1].lat,
+        recordedPoints[i - 1].lon,
+        recordedPoints[i].lat,
+        recordedPoints[i].lon
+      ) * 1000;
+    }
+    return d;
+  }, [recordedPoints]);
+
+  const recordDurationSec = useMemo(() => {
+    if (recordedPoints.length < 2) return 0;
+    const start = recordedPoints[0].timestamp;
+    const end = recordedPoints[recordedPoints.length - 1].timestamp;
+    return Math.round((end - start) / 1000);
+  }, [recordedPoints]);
+
+  const recordSpeedKmh = useMemo(() => {
+    if (recordDistanceMeters <= 0 || recordDurationSec <= 0) return 0;
+    const mPerSec = recordDistanceMeters / recordDurationSec;
+    return mPerSec * 3.6;
+  }, [recordDistanceMeters, recordDurationSec]);
+
+  const formatDistance = (m: number) => {
+    if (m < 1000) return `${m.toFixed(0)} m`;
+    return `${(m / 1000).toFixed(2)} km`;
+  };
+
+  const formatDuration = (s: number) => {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+    return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  };
+
   return (
     <div className={`h-screen pt-16 flex flex-col ${mobileControlsOpen ? 'map-mobile-controls-open' : ''}`}>
       {/* Desktop/tablet top bar */}
@@ -248,6 +399,27 @@ export default function MapPage() {
           onOfflineCache={handleOfflineCache}
         />
       </div>
+
+      {isRanger && (
+        <div className="hidden md:flex justify-end items-center gap-2 px-4 py-2">
+          <Button
+            size="sm"
+            variant={isRecording ? 'destructive' : 'outline'}
+            className="gap-1"
+            onClick={toggleRecording}
+          >
+            {isRecording ? 'Stop Recording' : 'Record Trail'}
+          </Button>
+          <Button
+            size="sm"
+            variant={isAccuracyMode ? 'secondary' : 'ghost'}
+            className="gap-1"
+            onClick={toggleAccuracyMode}
+          >
+            Test GPS Accuracy
+          </Button>
+        </div>
+      )}
 
       {/* Desktop/tablet trail selector */}
       <div className="hidden md:flex glass-card border-b border-border/30 px-4 py-2 items-center gap-2 overflow-x-auto">
@@ -299,6 +471,13 @@ export default function MapPage() {
                 }}
               />
             ))}
+
+            {isRecording && recordedPoints.length > 1 && (
+              <Polyline
+                positions={recordedPoints.map((p) => [p.lat, p.lon] as [number, number])}
+                pathOptions={{ color: '#f97316', weight: 4, dashArray: '4 8' }}
+              />
+            )}
 
             <Marker
               position={currentTrail.path[0]}
@@ -361,6 +540,22 @@ export default function MapPage() {
             userTrailProgress={userTrailProgress}
           />
         </div>
+
+        {/* Ranger recording / accuracy badge + stats */}
+        {isRanger && (isRecording || isAccuracyMode) && (
+          <div className="absolute top-24 left-4 z-[1000] glass-card rounded-lg px-3 py-2 text-xs flex flex-col gap-1 max-w-xs">
+            <div className="font-semibold">
+              {isAccuracyMode ? 'Accuracy Test Active' : 'Recording Trail'}
+            </div>
+            <div className="flex flex-wrap gap-3 text-muted-foreground">
+              <span>Dist: <span className="text-foreground font-medium">{formatDistance(recordDistanceMeters)}</span></span>
+              <span>Time: <span className="text-foreground font-medium">{formatDuration(recordDurationSec)}</span></span>
+              <span>Speed: <span className="text-foreground font-medium">
+                {recordSpeedKmh > 0 ? `${recordSpeedKmh.toFixed(1)} km/h` : '--'}
+              </span></span>
+            </div>
+          </div>
+        )}
 
         {/* Compass */}
         <div className="absolute top-24 right-4 md:top-4 md:right-16 z-[1000] w-24">
@@ -539,6 +734,28 @@ export default function MapPage() {
                     </Button>
                   )}
                 </div>
+                {isRanger && (
+                  <div className="flex flex-col gap-2 pt-2 border-t border-border/30">
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant={isRecording ? 'destructive' : 'outline'}
+                        className="gap-1 flex-1"
+                        onClick={toggleRecording}
+                      >
+                        {isRecording ? 'Stop Recording' : 'Record Trail'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={isAccuracyMode ? 'secondary' : 'ghost'}
+                        className="gap-1 flex-1"
+                        onClick={toggleAccuracyMode}
+                      >
+                        Test Accuracy
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
