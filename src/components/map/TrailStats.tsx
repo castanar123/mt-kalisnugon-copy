@@ -7,6 +7,7 @@ import { useMemo } from 'react';
 interface TrailStatsProps {
   distance: number;
   elapsed: number;
+  currentSpeed: number | null;
   selectedTrail: number;
   offTrail: boolean;
   tracking: boolean;
@@ -24,10 +25,13 @@ function formatTime(s: number) {
 }
 
 export default function TrailStats({
-  distance, elapsed, selectedTrail, offTrail, tracking, offlineReady,
+  distance, elapsed, currentSpeed, selectedTrail, offTrail, tracking, offlineReady,
   onStartTracking, onStopTracking, onOfflineCache,
 }: TrailStatsProps) {
-  const pace = elapsed > 0 && distance > 0 ? elapsed / 60 / distance : 0;
+  const avgPace = elapsed > 0 && distance > 0 ? elapsed / 60 / distance : 0;
+  const realTimePace = currentSpeed && currentSpeed > 0 ? 60 / currentSpeed : 0;
+  const displayPace = realTimePace > 0 ? realTimePace : avgPace;
+
   const trailColor = useMemo(() => TRAILS[selectedTrail].color, [selectedTrail]);
 
   return (
@@ -59,7 +63,7 @@ export default function TrailStats({
                 <span className="text-foreground font-semibold">{formatTime(elapsed)}</span>
               </span>
               <span className="whitespace-nowrap">
-                <span className="text-foreground font-semibold">{pace > 0 ? pace.toFixed(1) : '--'}</span> min/km
+                <span className="text-foreground font-semibold">{displayPace > 0 ? displayPace.toFixed(1) : '--'}</span> min/km
               </span>
             </div>
           </div>

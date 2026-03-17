@@ -148,6 +148,7 @@ export default function MapPage() {
   const [trackPath, setTrackPath] = useState<[number, number][]>([]);
   const [distance, setDistance] = useState(0);
   const [elapsed, setElapsed] = useState(0);
+  const [currentSpeed, setCurrentSpeed] = useState<number | null>(null);
   const [offTrail, setOffTrail] = useState(false);
   const [selectedTrail, setSelectedTrail] = useState(0);
   const [offlineReady, setOfflineReady] = useState(false);
@@ -157,48 +158,78 @@ export default function MapPage() {
   const [isRecording, setIsRecording] = useState(false);
   const [isAccuracyMode, setIsAccuracyMode] = useState(false);
   const [recordedPoints, setRecordedPoints] = useState<RecordedPoint[]>([]);
-  const recordTimerRef = useRef<number | null>(null);
-  const lastFilteredRef = useRef<RecordedPoint | null>(null);
+  const recordWatchRef = useRef<number | null>(null);
   const watchRef = useRef<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { role } = useAuth();
   const isRanger = role === 'ranger';
+
+  // Kalman Filter State for high-accuracy movement tracking
+  const kalmanStateRef = useRef<{
+    lat: number;
+    lon: number;
+    variance: number; // Error covariance
+    lastTimestamp: number;
+  } | null>(null);
 
   type RecordedPoint = {
     timestamp: number;
     lat: number;
     lon: number;
     alt?: number | null;
+    speed?: number | null;
+    accuracy?: number | null;
     heading?: number | null;
   };
 
-  const applyPositionFilter = useCallback(
-    (raw: RecordedPoint): RecordedPoint => {
-      const prev = lastFilteredRef.current;
-      if (!prev) {
-        lastFilteredRef.current = raw;
-        return raw;
-      }
+  /**
+   * Kalman Filter implementation for GPS smoothing
+   * This algorithm balances the "noise" of GPS readings against the "predicted" position.
+   */
+  const applyKalmanFilter = useCallback((raw: RecordedPoint): RecordedPoint => {
+    const minAccuracy = 1.0; // Assume 1m is the best possible accuracy
+    const processNoise = 0.000001; // How much we expect the hiker to move between updates (lat/lon units)
+    
+    if (!kalmanStateRef.current) {
+      kalmanStateRef.current = {
+        lat: raw.lat,
+        lon: raw.lon,
+        variance: raw.accuracy || 10,
+        lastTimestamp: raw.timestamp
+      };
+      return raw;
+    }
 
-      const alpha = 0.6;
-      const lat = alpha * raw.lat + (1 - alpha) * prev.lat;
-      const lon = alpha * raw.lon + (1 - alpha) * prev.lon;
+    const state = kalmanStateRef.current;
+    const dt = (raw.timestamp - state.lastTimestamp) / 1000.0;
+    const currentAccuracy = Math.max(raw.accuracy || 10, minAccuracy);
 
-      const headingAlpha = 0.5;
-      let heading = raw.heading ?? prev.heading ?? null;
-      if (raw.heading != null && prev.heading != null) {
-        const rawH = raw.heading;
-        const prevH = prev.heading;
-        const delta = ((((rawH - prevH) + 540) % 360) - 180); // shortest path
-        heading = (prevH + headingAlpha * delta + 360) % 360;
-      }
+    // 1. Prediction Step: Assume position stays same (process noise increases variance)
+    const predictedVariance = state.variance + processNoise * dt;
 
-      const filtered = { ...raw, lat, lon, heading };
-      lastFilteredRef.current = filtered;
-      return filtered;
-    },
-    []
-  );
+    // 2. Update Step: Calculate Kalman Gain
+    const kalmanGain = predictedVariance / (predictedVariance + currentAccuracy);
+
+    // 3. New State: Blend prediction with measurement
+    const filteredLat = state.lat + kalmanGain * (raw.lat - state.lat);
+    const filteredLon = state.lon + kalmanGain * (raw.lon - state.lon);
+    const filteredVariance = (1 - kalmanGain) * predictedVariance;
+
+    kalmanStateRef.current = {
+      lat: filteredLat,
+      lon: filteredLon,
+      variance: filteredVariance,
+      lastTimestamp: raw.timestamp
+    };
+
+    return {
+      ...raw,
+      lat: filteredLat,
+      lon: filteredLon
+    };
+  }, []);
+
+  const speedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const startTracking = useCallback(() => {
     if (!navigator.geolocation) { toast.error('Geolocation not supported'); return; }
@@ -206,19 +237,48 @@ export default function MapPage() {
     setTrackPath([]);
     setDistance(0);
     setElapsed(0);
+    setCurrentSpeed(0);
+    kalmanStateRef.current = null; // Reset Kalman filter
     timerRef.current = setInterval(() => setElapsed((s) => s + 1), 1000);
 
     watchRef.current = navigator.geolocation.watchPosition(
       (pos) => {
-        const newPos: [number, number] = [pos.coords.latitude, pos.coords.longitude];
+        const raw: RecordedPoint = {
+          timestamp: Date.now(),
+          lat: pos.coords.latitude,
+          lon: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        };
+
+        const filtered = applyKalmanFilter(raw);
+        const newPos: [number, number] = [filtered.lat, filtered.lon];
+        
+        // Update current speed (reported in m/s, convert to km/h)
+        if (pos.coords.speed != null && pos.coords.speed >= 0) {
+          setCurrentSpeed(pos.coords.speed * 3.6);
+          
+          // Clear any pending "set to zero" timeout
+          if (speedTimeoutRef.current) clearTimeout(speedTimeoutRef.current);
+          // If no speed update for 4 seconds, assume stopped
+          speedTimeoutRef.current = setTimeout(() => setCurrentSpeed(0), 4000);
+        } else {
+          // If device doesn't provide speed, we could calculate it from distance/time
+          // but for now we just keep it or set to 0 if stationary
+        }
+
         setUserPos(newPos);
         setTrackPath((prev) => {
           if (prev.length > 0) {
             const last = prev[prev.length - 1];
             const d = haversineDistance(last[0], last[1], newPos[0], newPos[1]);
-            setDistance((old) => old + d);
+            // Only add to distance if movement is significant (> 1m)
+            if (d > 0.001) {
+              setDistance((old) => old + d);
+              return [...prev, newPos];
+            }
+            return prev;
           }
-          return [...prev, newPos];
+          return [newPos];
         });
 
         // Track progress along selected trail
@@ -227,7 +287,7 @@ export default function MapPage() {
 
         // Check if off-trail (> 100m from nearest trail point)
         const minDist = Math.min(...TRAILS.map((t) => distanceToTrail(newPos[0], newPos[1], t.path)));
-        if (minDist > 0.1) {
+        if (!isAccuracyMode && minDist > 0.1) {
           setOffTrail(true);
           toast.warning('You are off the marked trail!', { id: 'off-trail' });
         } else {
@@ -237,7 +297,7 @@ export default function MapPage() {
       (err) => toast.error(`GPS Error: ${err.message}`),
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
     );
-  }, [selectedTrail]);
+  }, [selectedTrail, isAccuracyMode, applyKalmanFilter]);
 
   const stopTracking = useCallback(() => {
     setTracking(false);
@@ -269,7 +329,9 @@ export default function MapPage() {
   };
 
   const currentTrail = TRAILS[selectedTrail];
-  const pace = elapsed > 0 && distance > 0 ? elapsed / 60 / distance : 0;
+  const avgPace = elapsed > 0 && distance > 0 ? (elapsed / 60) / distance : 0;
+  const realTimePace = currentSpeed && currentSpeed > 0 ? 60 / currentSpeed : 0;
+  const displayPace = realTimePace > 0 ? realTimePace : avgPace;
 
   useEffect(() => {
     // keep the map clean by default on mobile when switching trails
@@ -282,42 +344,64 @@ export default function MapPage() {
       return;
     }
     setRecordedPoints([]);
-    lastFilteredRef.current = null;
+    kalmanStateRef.current = null; // Reset Kalman filter
     setIsRecording(true);
 
-    recordTimerRef.current = window.setInterval(() => {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const raw: RecordedPoint = {
-            timestamp: Date.now(),
-            lat: pos.coords.latitude,
-            lon: pos.coords.longitude,
-            alt: pos.coords.altitude,
-            heading: null,
-          };
-          const filtered = applyPositionFilter(raw);
-          setRecordedPoints((prev) => [...prev, filtered]);
-        },
-        () => {
-          // ignore individual read errors for now
-        },
-        { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
-      );
-    }, 1000);
-  }, [applyPositionFilter]);
+    recordWatchRef.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        const raw: RecordedPoint = {
+          timestamp: Date.now(),
+          lat: pos.coords.latitude,
+          lon: pos.coords.longitude,
+          alt: pos.coords.altitude,
+          speed: pos.coords.speed,
+          accuracy: pos.coords.accuracy,
+          heading: pos.coords.heading,
+        };
+
+        const filtered = applyKalmanFilter(raw);
+
+        setRecordedPoints((prev) => {
+          if (prev.length === 0) return [filtered];
+
+          const last = prev[prev.length - 1];
+          const dist = haversineDistance(last.lat, last.lon, filtered.lat, filtered.lon) * 1000;
+
+          // Only add point if it's more than 1 meter away after filtering
+          // Kalman Filter already reduces jitter significantly.
+          if (dist > 1.0) {
+            return [...prev, filtered];
+          }
+
+          // Update speed even if we don't add a point, for real-time display
+          if (filtered.speed != null) {
+            const updated = [...prev];
+            updated[updated.length - 1] = { ...updated[updated.length - 1], speed: filtered.speed };
+            return updated;
+          }
+
+          return prev;
+        });
+      },
+      (err) => {
+        toast.error(`Recording Error: ${err.message}`);
+      },
+      { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
+    );
+  }, [applyKalmanFilter]);
 
   const stopRecording = useCallback(() => {
     setIsRecording(false);
-    if (recordTimerRef.current != null) {
-      clearInterval(recordTimerRef.current);
-      recordTimerRef.current = null;
+    if (recordWatchRef.current != null) {
+      navigator.geolocation.clearWatch(recordWatchRef.current);
+      recordWatchRef.current = null;
     }
   }, []);
 
   useEffect(() => {
     return () => {
-      if (recordTimerRef.current != null) {
-        clearInterval(recordTimerRef.current);
+      if (recordWatchRef.current != null) {
+        navigator.geolocation.clearWatch(recordWatchRef.current);
       }
     };
   }, []);
@@ -365,10 +449,26 @@ export default function MapPage() {
   }, [recordedPoints]);
 
   const recordSpeedKmh = useMemo(() => {
-    if (recordDistanceMeters <= 0 || recordDurationSec <= 0) return 0;
-    const mPerSec = recordDistanceMeters / recordDurationSec;
-    return mPerSec * 3.6;
-  }, [recordDistanceMeters, recordDurationSec]);
+    if (recordedPoints.length === 0) return 0;
+
+    const lastPoint = recordedPoints[recordedPoints.length - 1];
+
+    // Real-time: Use the most recent reported speed if fresh (within 4s)
+    if (lastPoint.speed != null && lastPoint.speed >= 0 && (Date.now() - lastPoint.timestamp < 4000)) {
+      return lastPoint.speed * 3.6;
+    }
+
+    // Fallback: calculate from last few points (windowed for stability)
+    if (recordedPoints.length < 2) return 0;
+    const pointsToUse = recordedPoints.slice(-3); // smaller window for more "real-time" feel
+    const first = pointsToUse[0];
+    const last = pointsToUse[pointsToUse.length - 1];
+    const d = haversineDistance(first.lat, first.lon, last.lat, last.lon) * 1000;
+    const t = (last.timestamp - first.timestamp) / 1000;
+
+    if (t <= 0 || d < 0.5) return 0; // Ignore tiny movements for speed
+    return (d / t) * 3.6;
+  }, [recordedPoints]);
 
   const formatDistance = (m: number) => {
     if (m < 1000) return `${m.toFixed(0)} m`;
@@ -390,6 +490,7 @@ export default function MapPage() {
         <TrailStats
           distance={distance}
           elapsed={elapsed}
+          currentSpeed={currentSpeed}
           selectedTrail={selectedTrail}
           offTrail={offTrail}
           tracking={tracking}
@@ -443,6 +544,7 @@ export default function MapPage() {
           <MapContainer
             center={MT_KALISUNGAN_CENTER}
             zoom={DEFAULT_ZOOM}
+            maxZoom={20}
             className="h-full w-full"
             zoomControl={false}
             attributionControl={false}
@@ -451,13 +553,13 @@ export default function MapPage() {
           >
             <MapInstanceBridge onReady={setMapInstance} />
             {baseLayer === 'street' && (
-              <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />
+              <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" maxZoom={20} />
             )}
             {baseLayer === 'topo' && (
-              <TileLayer url="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png" />
+              <TileLayer url="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png" maxZoom={17} />
             )}
             {baseLayer === 'sat' && (
-              <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
+              <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" maxZoom={19} />
             )}
 
             {TRAILS.map((t, i) => (
@@ -658,7 +760,7 @@ export default function MapPage() {
                     <span className="text-foreground font-semibold">{String(Math.floor(elapsed / 60)).padStart(2, '0')}:{String(elapsed % 60).padStart(2, '0')}</span>
                   </span>
                   <span>
-                    <span className="text-foreground font-semibold">{pace > 0 ? pace.toFixed(1) : '--'}</span> min/km
+                    <span className="text-foreground font-semibold">{displayPace > 0 ? displayPace.toFixed(1) : '--'}</span> min/km
                   </span>
                 </div>
               </div>
