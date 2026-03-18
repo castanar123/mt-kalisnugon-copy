@@ -345,7 +345,7 @@ export default function Index() {
       <section className="py-20 px-4">
         <div className="container max-w-3xl mx-auto text-center glass-card rounded-2xl p-12 glow-primary">
           <h2 className="text-3xl font-bold mb-2">
-            Ready to <span className="text-primary">Hike Mount Kalisungan?</span>
+            Ready to <span className="text-gradient">Hike Mount Kalisungan?</span>
           </h2>
           <p className="text-xl font-semibold mb-8">Reserve your slot now.</p>
           <div className="flex gap-4 justify-center">

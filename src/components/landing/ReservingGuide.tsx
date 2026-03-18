@@ -35,16 +35,16 @@ function StepCard({ step, delay }: { step: (typeof steps)[number]; delay: number
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
       transition={{ delay, duration: 0.45 }}
-      className="flex gap-4"
+      className="flex gap-5"
     >
       <div className="flex-shrink-0 mt-0.5">
-        <div className="w-8 h-8 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center text-primary font-bold text-sm">
+        <div className="w-10 h-10 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center text-primary font-bold text-base">
           {step.number}
         </div>
       </div>
       <div>
-        <h3 className="font-semibold text-sm mb-1">{step.title}</h3>
-        <p className="text-xs text-muted-foreground leading-relaxed">{step.desc}</p>
+        <h3 className="font-bold text-base md:text-lg mb-1.5">{step.title}</h3>
+        <p className="text-sm text-muted-foreground leading-relaxed">{step.desc}</p>
       </div>
     </motion.div>
   );
@@ -63,9 +63,9 @@ export default function ReservingGuide() {
         >
           <h2 className="text-2xl md:text-3xl font-bold leading-snug">
             Simple Guide to{' '}
-            <span className="text-primary">Reserving</span>{' '}
+            <span className="text-gradient">Reserving</span>{' '}
             and{' '}
-            <span className="text-accent">Completing Your Hike Safely</span>
+            <span className="text-gradient">Completing Your Hike Safely</span>
           </h2>
         </motion.div>
 

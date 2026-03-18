@@ -256,7 +256,7 @@ export default function HikerReviews() {
           className="text-center mb-10"
         >
           <h2 className="text-3xl md:text-4xl font-bold mb-3">
-            What Hikers Are <span className="text-accent">Saying</span>
+            What Hikers Are <span className="text-gradient">Saying</span>
           </h2>
           <p className="text-sm text-muted-foreground mb-6">
             Real experiences from adventurers who conquered Mount Kalisungan.

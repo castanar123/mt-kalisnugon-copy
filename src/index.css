@@ -4,55 +4,55 @@
 
 @layer base {
   :root {
-    /* Light theme – airy mountain morning */
-    --background: 160 30% 97%;
-    --foreground: 160 20% 15%;
+    /* Light theme – vibrant mountain morning */
+    --background: 148 40% 94%;
+    --foreground: 155 45% 8%;
 
     --card: 0 0% 100%;
-    --card-foreground: 160 20% 15%;
+    --card-foreground: 155 40% 10%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 160 20% 15%;
+    --popover-foreground: 155 40% 10%;
 
-    --primary: 152 55% 40%;
+    --primary: 152 65% 28%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 160 20% 92%;
-    --secondary-foreground: 160 20% 20%;
+    --secondary: 150 50% 85%;
+    --secondary-foreground: 150 55% 16%;
 
-    --muted: 160 18% 90%;
-    --muted-foreground: 160 10% 40%;
+    --muted: 150 35% 87%;
+    --muted-foreground: 155 22% 34%;
 
-    --accent: 40 90% 55%;
-    --accent-foreground: 0 0% 10%;
+    --accent: 38 96% 46%;
+    --accent-foreground: 0 0% 8%;
 
-    --destructive: 0 65% 52%;
+    --destructive: 0 68% 48%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 160 15% 85%;
-    --input: 160 15% 85%;
-    --ring: 152 55% 40%;
+    --border: 152 40% 72%;
+    --input: 152 30% 86%;
+    --ring: 152 65% 28%;
 
     --radius: 0.75rem;
 
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 160 20% 20%;
-    --sidebar-primary: 152 55% 40%;
+    --sidebar-background: 148 45% 97%;
+    --sidebar-foreground: 155 45% 12%;
+    --sidebar-primary: 152 65% 28%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 160 20% 94%;
-    --sidebar-accent-foreground: 160 20% 20%;
-    --sidebar-border: 160 15% 82%;
-    --sidebar-ring: 152 55% 40%;
+    --sidebar-accent: 150 45% 88%;
+    --sidebar-accent-foreground: 150 55% 16%;
+    --sidebar-border: 152 35% 78%;
+    --sidebar-ring: 152 65% 28%;
 
-    --sky: 200 80% 60%;
-    --sky-foreground: 0 0% 10%;
-    --warning: 40 95% 55%;
-    --warning-foreground: 0 0% 10%;
-    --success: 152 55% 40%;
+    --sky: 200 80% 50%;
+    --sky-foreground: 0 0% 8%;
+    --warning: 38 96% 46%;
+    --warning-foreground: 0 0% 8%;
+    --success: 152 65% 28%;
     --success-foreground: 0 0% 100%;
 
-    --glass: 0 0% 100% / 0.7;
-    --glass-border: 160 15% 80% / 0.6;
+    --glass: 0 0% 100% / 0.72;
+    --glass-border: 152 45% 70% / 0.45;
   }
 
   .dark {
@@ -116,6 +116,17 @@
   }
 }
 
+/* ── Light mode: rich gradient mesh background ── */
+html.light body {
+  background:
+    radial-gradient(ellipse at 15% 5%,  hsl(152 65% 80% / 0.55) 0%, transparent 45%),
+    radial-gradient(ellipse at 85% 8%,  hsl(200 70% 85% / 0.40) 0%, transparent 40%),
+    radial-gradient(ellipse at 90% 90%, hsl(38  90% 85% / 0.50) 0%, transparent 45%),
+    radial-gradient(ellipse at 10% 85%, hsl(152 55% 82% / 0.40) 0%, transparent 40%),
+    hsl(148 40% 94%);
+  min-height: 100vh;
+}
+
 @layer utilities {
   .glass-card {
     @apply bg-card/60 backdrop-blur-xl border border-border/30 shadow-lg;
@@ -132,6 +143,39 @@
   .glow-accent {
     box-shadow: 0 0 30px hsl(40 90% 55% / 0.15), 0 0 60px hsl(40 90% 55% / 0.05);
   }
+}
+
+/* ── Light mode utility overrides ── */
+html.light .glass-card {
+  background: hsl(0 0% 100% / 0.78);
+  border-color: hsl(152 40% 72% / 0.40);
+  box-shadow:
+    0 4px 24px hsl(152 50% 30% / 0.08),
+    0 1px 4px  hsl(152 50% 30% / 0.06),
+    inset 0 1px 0 hsl(0 0% 100% / 0.90);
+}
+
+html.light .glass-card-strong {
+  background: hsl(0 0% 100% / 0.90);
+  border-color: hsl(152 40% 72% / 0.50);
+  box-shadow:
+    0 8px 40px hsl(152 50% 25% / 0.12),
+    0 2px 8px  hsl(152 50% 25% / 0.08),
+    inset 0 1px 0 hsl(0 0% 100% / 0.95);
+}
+
+html.light .glow-primary {
+  box-shadow:
+    0 0 0 1px hsl(152 65% 28% / 0.15),
+    0 0 28px  hsl(152 65% 28% / 0.22),
+    0 0 60px  hsl(152 65% 28% / 0.10);
+}
+
+html.light .glow-accent {
+  box-shadow:
+    0 0 0 1px hsl(38 96% 46% / 0.15),
+    0 0 28px  hsl(38 96% 46% / 0.22),
+    0 0 60px  hsl(38 96% 46% / 0.10);
 }
 
 /* Leaflet theme-aware overrides */

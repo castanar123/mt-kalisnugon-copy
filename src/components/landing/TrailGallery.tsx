@@ -35,21 +35,18 @@ export default function TrailGallery() {
           initial={{ opacity: 0 }}
           whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
-          className="mb-10"
+          className="mb-10 text-center"
         >
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 text-primary text-sm mb-4">
             <Camera className="h-4 w-4" />
             Trail Gallery
           </div>
           <h2 className="text-3xl md:text-4xl font-bold mb-4">
-            About <span className="text-primary">Mount Kalisungan</span>
+            Discover the <span className="text-gradient">Beauty</span> of Kalisungan
           </h2>
-          <p className="text-muted-foreground max-w-2xl leading-relaxed">
-            Mount Kalisungan is a semi-conical dormant volcano of history, quite a cone-less and adone othece, an amevntnp was good friend,
-            and the numerous communally incorporations in its flowge, dith avulturomes nlumnt, ilthe infostrction, dokawhithno favornt
-            stubkbured favewop ean oagantwodwenturekimos, gwhinae documenthest folde vante, cant, catienger, the res of Itchi cabeology, cagoror //
-            Mount Kalisango, and hnderlinmota: llanom demanstering mentitation arricee at the taloondar, nalooby aldth on webhllove and
-            commemorative r nnreatuvns like dnscent hnem.
+         
+          <p className="text-muted-foreground leading-relaxed text-center max-w-3xl mx-auto mt-3">
+           Enjoy the stunning 360-degree summit view. From the top, hikers are rewarded with a full panorama of rolling hills, nearby mountains, and the distant waters of Laguna de Bay.
           </p>
         </motion.div>
 
