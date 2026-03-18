@@ -2,7 +2,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/useTheme';
 import { Button } from '@/components/ui/button';
-import { Mountain, Map, MessageSquare, CalendarCheck, LayoutDashboard, LogOut, Menu, X, Moon, Sun } from 'lucide-react';
+import { Mountain, Map, MessageSquare, CalendarCheck, LayoutDashboard, LogOut, Menu, X, Moon, Sun, UserCircle } from 'lucide-react';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import logo from '@/assets/logo.png';
@@ -14,7 +14,11 @@ export default function Navbar() {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const dashboardPath = role === 'admin' ? '/admin' : role === 'ranger' ? '/ranger' : '/hiker';
+  const dashboardPath =
+    role === 'admin' ? '/admin' :
+    role === 'ranger' ? '/ranger' :
+    role === 'guide' ? '/guide' :
+    '/hiker';
 
   const navLinks = user
     ? [
@@ -22,6 +26,7 @@ export default function Navbar() {
         { to: '/chat', label: 'AI Assistant', icon: MessageSquare },
         { to: '/booking', label: 'Book Hike', icon: CalendarCheck },
         { to: dashboardPath, label: 'Dashboard', icon: LayoutDashboard },
+        { to: '/profile', label: 'Profile', icon: UserCircle },
       ]
     : [];
 

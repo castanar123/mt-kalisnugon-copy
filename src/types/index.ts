@@ -1,4 +1,14 @@
-export type AppRole = 'admin' | 'ranger' | 'hiker';
+export type AppRole = 'admin' | 'ranger' | 'hiker' | 'guide';
+export type BookingStatus = 'pending' | 'confirmed' | 'cancelled' | 'adjustment_pending';
+
+/** Structured data stored as JSON in the bookings.notes field */
+export interface BookingMeta {
+  userNotes?: string;
+  assignedGuide?: string;       // Guide name assigned by admin
+  adjustedDate?: string;        // Proposed new date (yyyy-MM-dd) from admin
+  adjustedTime?: string;        // e.g. "07:00 AM"
+  guidePhone?: string;
+}
 
 export interface Profile {
   id: string;

@@ -12,6 +12,7 @@ import TrailNavigation from '@/components/map/TrailNavigation';
 import MapCompass from '@/components/map/MapCompass';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useAuth } from '@/hooks/useAuth';
+import SOSPanel from '@/components/core/SOSPanel';
 
 import 'leaflet/dist/leaflet.css';
 
@@ -807,6 +808,11 @@ export default function MapPage() {
         {/* Compass */}
         <div className="absolute top-24 right-4 md:top-4 md:right-16 z-[1000] w-24">
           <MapCompass userPos={userPos} />
+        </div>
+
+        {/* SOS compact button — bottom-left above mobile controls */}
+        <div className="absolute bottom-[7.5rem] md:bottom-[11rem] left-4 z-[1100]">
+          <SOSPanel compact />
         </div>
 
         {/* Desktop right-side stack: layers + elevation + locate */}

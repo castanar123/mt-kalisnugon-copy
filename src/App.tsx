@@ -15,6 +15,9 @@ import BookingPage from "./pages/BookingPage";
 import AdminDashboard from "./pages/AdminDashboard";
 import RangerDashboard from "./pages/RangerDashboard";
 import HikerDashboard from "./pages/HikerDashboard";
+import ProfilePage from "./pages/ProfilePage";
+import DashboardRedirect from "./pages/DashboardRedirect";
+import GuideDashboard from "./pages/GuideDashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -38,6 +41,9 @@ const App = () => (
               <Route path="/admin" element={<AdminDashboard />} />
               <Route path="/ranger" element={<RangerDashboard />} />
               <Route path="/hiker" element={<HikerDashboard />} />
+              <Route path="/guide" element={<GuideDashboard />} />
+              <Route path="/profile" element={<ProfilePage />} />
+              <Route path="/dashboard" element={<DashboardRedirect />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AuthProvider>
