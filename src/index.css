@@ -127,6 +127,200 @@ html.light body {
   min-height: 100vh;
 }
 
+/* ── Light-mode section cinematic enhancements ── */
+
+/* Section with photo-style warm overlay */
+html.light .section-warm-overlay {
+  background:
+    linear-gradient(180deg, hsl(38 60% 96% / 0.85) 0%, hsl(148 40% 94%) 100%),
+    radial-gradient(ellipse at 30% 20%, hsl(38 90% 80% / 0.25) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 80%, hsl(152 50% 80% / 0.25) 0%, transparent 50%);
+}
+
+/* Section with subtle dot pattern */
+html.light .section-dot-pattern {
+  background-image: radial-gradient(circle, hsl(152 40% 60% / 0.12) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Section with subtle grain texture */
+html.light .section-grain {
+  position: relative;
+}
+html.light .section-grain::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Cinematic card with rich shadow for light mode */
+html.light .cinematic-card {
+  background: hsl(0 0% 100% / 0.88);
+  border: 1px solid hsl(152 40% 72% / 0.35);
+  box-shadow:
+    0 1px 2px hsl(152 30% 20% / 0.04),
+    0 4px 16px hsl(152 30% 20% / 0.06),
+    0 12px 48px hsl(152 30% 20% / 0.08),
+    inset 0 1px 0 hsl(0 0% 100% / 0.95);
+  border-radius: 1rem;
+  transition: box-shadow 0.3s ease, transform 0.3s ease;
+}
+html.light .cinematic-card:hover {
+  box-shadow:
+    0 1px 2px hsl(152 30% 20% / 0.04),
+    0 8px 24px hsl(152 30% 20% / 0.10),
+    0 20px 60px hsl(152 30% 20% / 0.12),
+    inset 0 1px 0 hsl(0 0% 100% / 0.95);
+  transform: translateY(-2px);
+}
+
+/* Dark mode cinematic card */
+html.dark .cinematic-card {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: 1rem;
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+html.dark .cinematic-card:hover {
+  box-shadow: 0 4px 20px hsl(0 0% 0% / 0.4);
+  transform: translateY(-1px);
+}
+
+/* Dark mode gradient border glow (subtle) */
+html.dark .gradient-border-glow {
+  position: relative;
+}
+html.dark .gradient-border-glow::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  background: linear-gradient(135deg, hsl(152 60% 42% / 0.12), hsl(40 90% 55% / 0.08));
+  border-radius: inherit;
+  z-index: -1;
+  filter: blur(5px);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+html.dark .gradient-border-glow:hover::after {
+  opacity: 1;
+}
+
+/* Gradient left border accent for cards */
+html.light .card-gradient-border {
+  position: relative;
+  overflow: hidden;
+}
+html.light .card-gradient-border::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg, hsl(152 65% 28%), hsl(38 96% 46%));
+  border-radius: 3px 0 0 3px;
+}
+
+/* Section divider styling */
+html.light .section-divider {
+  position: relative;
+  z-index: 1;
+  margin-top: -1px;
+}
+html.light .section-divider svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Animated gradient border for featured elements */
+html.light .gradient-border-glow {
+  position: relative;
+}
+html.light .gradient-border-glow::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  background: linear-gradient(135deg, hsl(152 65% 28% / 0.3), hsl(38 96% 46% / 0.3), hsl(200 80% 50% / 0.2));
+  border-radius: inherit;
+  z-index: -1;
+  filter: blur(8px);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+html.light .gradient-border-glow:hover::after {
+  opacity: 1;
+}
+
+/* Review card avatar initial circle */
+html.light .avatar-initial {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  color: white;
+  flex-shrink: 0;
+}
+
+/* Cinematic CTA section for light mode */
+html.light .cta-cinematic {
+  position: relative;
+  overflow: hidden;
+}
+html.light .cta-cinematic::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(135deg, hsl(152 65% 18% / 0.92), hsl(160 40% 12% / 0.88)),
+    radial-gradient(ellipse at 30% 30%, hsl(38 90% 55% / 0.15) 0%, transparent 50%);
+  border-radius: inherit;
+  z-index: 0;
+}
+
+/* Timeline connector line */
+html.light .timeline-connector {
+  position: relative;
+}
+html.light .timeline-connector::before {
+  content: '';
+  position: absolute;
+  left: 19px;
+  top: 50px;
+  bottom: -30px;
+  width: 2px;
+  background: linear-gradient(180deg, hsl(152 65% 28% / 0.4), hsl(152 65% 28% / 0.08));
+}
+
+/* Cinematic image overlay for gallery */
+html.light .gallery-image-overlay {
+  position: relative;
+}
+html.light .gallery-image-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, transparent 50%, hsl(0 0% 0% / 0.5) 100%),
+    radial-gradient(ellipse at 50% 0%, hsl(0 0% 0% / 0.1) 0%, transparent 60%);
+  opacity: 0.4;
+  transition: opacity 0.4s ease;
+  border-radius: inherit;
+  pointer-events: none;
+}
+html.light .gallery-image-overlay:hover::after {
+  opacity: 0.7;
+}
+
 @layer utilities {
   .glass-card {
     @apply bg-card/60 backdrop-blur-xl border border-border/30 shadow-lg;

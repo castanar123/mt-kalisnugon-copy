@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Star, MessageSquarePlus, Send, Loader2 } from 'lucide-react';
+import { Star, MessageSquarePlus, Send, Loader2, Quote } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -70,6 +70,8 @@ const fallbackReviews: Review[] = [
   },
 ];
 
+
+
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
   return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
@@ -99,8 +101,10 @@ function StarRating({
         <Star
           key={i}
           className={`${sizeClass} transition-colors ${
-            i < rating ? 'text-primary fill-primary' : 'text-muted-foreground/30'
-          } ${interactive ? 'cursor-pointer hover:text-primary' : ''}`}
+            i < rating
+              ? 'text-amber-500 fill-amber-500 dark:text-primary dark:fill-primary'
+              : 'text-muted-foreground/30'
+          } ${interactive ? 'cursor-pointer hover:text-amber-500 dark:hover:text-primary' : ''}`}
           onClick={() => interactive && onChange?.(i + 1)}
         />
       ))}
@@ -116,37 +120,29 @@ function TrailBadge({ trail }: { trail: string }) {
   );
 }
 
+
 function ReviewCard({ review, index }: { review: Review; index: number }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true }}
-      transition={{ duration: 0.4, delay: index * 0.07 }}
-      className="flex flex-col rounded-2xl border border-border/40 bg-card/70 backdrop-blur-sm p-5 gap-3 hover:border-primary/30 transition-colors duration-200"
+      initial={{ opacity: 0 }}
+      whileInView={{ opacity: 1 }}
+      viewport={{ once: true, amount: 0.1 }}
+      transition={{ duration: 0.35, delay: index * 0.04 }}
+      className="cinematic-card flex flex-col p-6 gap-3.5 relative overflow-hidden"
     >
       {/* Quote icon */}
-      <div
-        className="text-4xl font-serif leading-none select-none"
-        style={{ color: 'hsl(152 60% 42% / 0.22)', fontFamily: 'Georgia, serif' }}
-        aria-hidden="true"
-      >
-        &#8220;
-      </div>
+      <Quote className="h-6 w-6 text-primary/20 rotate-180 mb-1" />
 
       {/* Review text */}
-      <p className="text-sm text-muted-foreground leading-relaxed flex-1">
+      <p className="text-sm text-muted-foreground leading-relaxed flex-1 italic">
         &ldquo;{review.review_text}&rdquo;
       </p>
 
-      {/* Stars */}
-      <StarRating rating={review.rating} />
-
       {/* Footer: name/date + trail badge */}
-      <div className="flex items-end justify-between gap-2 pt-1 border-t border-border/20 mt-1">
+      <div className="flex items-center justify-between pt-3 border-t border-border/10 mt-1">
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-foreground truncate">{review.reviewer_name}</p>
-          <p className="text-xs text-muted-foreground">{formatDate(review.created_at)}</p>
+          <p className="text-sm font-bold text-foreground tracking-tight">{review.reviewer_name}</p>
+          <p className="text-[11px] text-muted-foreground/70 font-medium">{formatDate(review.created_at)}</p>
         </div>
         <TrailBadge trail={review.trail_name} />
       </div>
@@ -243,39 +239,41 @@ export default function HikerReviews() {
   const avg = averageRating(reviews);
 
   return (
-    <section className="py-24 px-4 relative overflow-hidden">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_hsl(152_60%_42%/0.04)_0%,_transparent_70%)]" />
+    <section className="py-24 px-4 relative overflow-hidden section-warm-overlay">
+      {/* Decorative background */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-72 h-72 bg-primary/5 rounded-full blur-2xl pointer-events-none" />
 
-      <div className="container max-w-5xl mx-auto relative">
+      <div className="container max-w-5xl mx-auto relative z-10">
 
         {/* Header */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
-          className="text-center mb-10"
+          transition={{ duration: 0.4 }}
+          className="text-center mb-12"
         >
-          <h2 className="text-3xl md:text-4xl font-bold mb-3">
+          <h2 className="text-3xl md:text-5xl font-bold mb-3 tracking-tight">
             What Hikers Are <span className="text-gradient">Saying</span>
           </h2>
-          <p className="text-sm text-muted-foreground mb-6">
+          <p className="text-base text-muted-foreground mb-6">
             Real experiences from adventurers who conquered Mount Kalisungan.
           </p>
 
           {/* Rating summary pill */}
-          <div className="inline-flex items-center gap-2.5 px-5 py-2 rounded-full border border-border/40 bg-card/60 backdrop-blur-sm">
+          <div className="inline-flex items-center gap-3 px-6 py-3 rounded-full cinematic-card">
             <div className="flex items-center gap-0.5">
               {Array.from({ length: 5 }).map((_, i) => (
-                <Star key={i} className="h-4 w-4 text-primary fill-primary" />
+                <Star key={i} className="h-4 w-4 text-amber-500 fill-amber-500 dark:text-primary dark:fill-primary" />
               ))}
             </div>
-            <span className="font-bold text-foreground">{avg}</span>
+            <span className="font-bold text-lg text-foreground">{avg}</span>
             <span className="text-sm text-muted-foreground">from {reviews.length} reviews</span>
           </div>
         </motion.div>
 
         {/* Review grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-12">
           {reviews.map((review, i) => (
             <ReviewCard key={review.id} review={review} index={i} />
           ))}
@@ -283,14 +281,15 @@ export default function HikerReviews() {
 
         {/* CTA */}
         <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          whileInView={{ opacity: 1, y: 0 }}
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
+          transition={{ duration: 0.35 }}
           className="text-center"
         >
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline" size="lg" className="gap-2">
+              <Button variant="outline" size="lg" className="gap-2 shadow-md hover:shadow-lg transition-shadow">
                 <MessageSquarePlus className="h-4 w-4" />
                 Share Your Experience
               </Button>
