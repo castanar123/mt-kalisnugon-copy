@@ -11,6 +11,12 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       overlay: false,
     },
+    proxy: {
+      '/api/v1/send/sms': {
+        target: 'https://smsapiph.onrender.com',
+        changeOrigin: true,
+      }
+    }
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {

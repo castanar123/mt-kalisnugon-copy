@@ -44,6 +44,7 @@ import {
   UserCheck,
   CalendarClock,
   XCircle,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { parseMeta, encodeMeta } from '@/lib/bookingMeta';
 import { motion } from 'framer-motion';
@@ -114,6 +115,12 @@ export default function AdminDashboard() {
   const [pendingBookings, setPendingBookings] = useState<any[]>([]);
   const [pendingLoading, setPendingLoading] = useState(false);
 
+  /* ── Capacity Management state ── */
+  const [capDate, setCapDate] = useState('');
+  const [capMax, setCapMax] = useState(100);
+  const [capSaving, setCapSaving] = useState(false);
+  const [upcomingCapacities, setUpcomingCapacities] = useState<any[]>([]);
+
   // Accept flow
   const [acceptDialogId, setAcceptDialogId] = useState<string | null>(null);
   const [selectedGuide, setSelectedGuide] = useState('');
@@ -128,7 +135,47 @@ export default function AdminDashboard() {
   useEffect(() => {
     loadData();
     loadPendingBookings();
+    loadUpcomingCapacities();
   }, []);
+
+  /* ── Capacity Management ── */
+  const loadUpcomingCapacities = async () => {
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const { data } = await supabase
+      .from('daily_capacity')
+      .select('*')
+      .gte('date', today)
+      .order('date', { ascending: true })
+      .limit(60);
+    setUpcomingCapacities(data || []);
+  };
+
+  const saveCapacity = async () => {
+    if (!capDate) { toast.error('Please select a date.'); return; }
+    if (capMax < 1) { toast.error('Max capacity must be at least 1.'); return; }
+    setCapSaving(true);
+    const { error } = await supabase
+      .from('daily_capacity')
+      .upsert({ date: capDate, max_capacity: capMax }, { onConflict: 'date' });
+    if (error) {
+      toast.error('Failed to save: ' + error.message);
+    } else {
+      toast.success(`✅ Capacity for ${capDate} set to ${capMax} hikers.`);
+      setCapDate('');
+      setCapMax(100);
+      loadUpcomingCapacities();
+    }
+    setCapSaving(false);
+  };
+
+  const deleteCapacityLimit = async (id: string) => {
+    const { error } = await supabase.from('daily_capacity').delete().eq('id', id);
+    if (error) toast.error('Failed to remove: ' + error.message);
+    else {
+      toast.success('Capacity limit removed (reverts to default 100).');
+      loadUpcomingCapacities();
+    }
+  };
 
   const loadPendingBookings = async () => {
     setPendingLoading(true);
@@ -318,6 +365,9 @@ export default function AdminDashboard() {
             </TabsTrigger>
             <TabsTrigger value="guides" className="gap-1.5 data-[state=active]:bg-primary/20 data-[state=active]:text-primary">
               <UserCog className="h-3.5 w-3.5" /> Guide Management
+            </TabsTrigger>
+            <TabsTrigger value="capacity" className="gap-1.5 data-[state=active]:bg-primary/20 data-[state=active]:text-primary">
+              <SlidersHorizontal className="h-3.5 w-3.5" /> Daily Capacity
             </TabsTrigger>
           </TabsList>
 
@@ -963,6 +1013,152 @@ export default function AdminDashboard() {
                       <p className="text-xs text-muted-foreground mt-1">{s.label}</p>
                     </div>
                   ))}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+          {/* ─────────────────────────────── DAILY CAPACITY TAB ── */}
+          <TabsContent value="capacity" className="space-y-6">
+            <div>
+              <h2 className="text-lg font-semibold">Daily Hiker Capacity</h2>
+              <p className="text-sm text-muted-foreground">
+                Set the maximum number of hikers allowed per day. Hikers see live availability when booking. Default is 100 if not set.
+              </p>
+            </div>
+
+            <div className="grid lg:grid-cols-2 gap-6">
+              {/* Set Capacity Form */}
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <SlidersHorizontal className="h-5 w-5 text-primary" /> Set Limit for a Date
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    Choose a future date and set how many total hiker slots are available. This updates the booking calendar in real-time.
+                  </p>
+                  <div className="space-y-2">
+                    <Label htmlFor="capDate">Date</Label>
+                    <Input
+                      id="capDate"
+                      type="date"
+                      value={capDate}
+                      onChange={(e) => setCapDate(e.target.value)}
+                      min={format(new Date(), 'yyyy-MM-dd')}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="capMax">Max Hikers Per Day</Label>
+                    <Input
+                      id="capMax"
+                      type="number"
+                      min={1}
+                      max={500}
+                      value={capMax}
+                      onChange={(e) => setCapMax(Math.max(1, parseInt(e.target.value) || 1))}
+                      placeholder="100"
+                      className="font-bold text-lg h-12"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Setting a lower number restricts new bookings once the count is reached.
+                    </p>
+                  </div>
+                  <Button
+                    className="w-full gap-2"
+                    onClick={saveCapacity}
+                    disabled={capSaving || !capDate}
+                  >
+                    {capSaving ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <CalendarCheck className="h-4 w-4" />
+                    )}
+                    Save Capacity Limit
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Upcoming Limits */}
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <CalendarCheck className="h-5 w-5 text-primary" /> Upcoming Limits
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {upcomingCapacities.length === 0 ? (
+                    <div className="text-center py-12">
+                      <SlidersHorizontal className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+                      <p className="text-muted-foreground text-sm">
+                        No custom limits set. All dates use the default of 100 hikers/day.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                      {upcomingCapacities.map((cap) => {
+                        const available = Math.max(0, cap.max_capacity - cap.current_count);
+                        const ratio = cap.max_capacity > 0 ? available / cap.max_capacity : 0;
+                        const statusColor =
+                          available === 0
+                            ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                            : ratio <= 0.3
+                            ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                            : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
+                        return (
+                          <div
+                            key={cap.id}
+                            className="flex items-center justify-between p-3 rounded-xl border border-border/20 bg-secondary/20"
+                          >
+                            <div className="space-y-0.5">
+                              <p className="text-sm font-semibold">{cap.date}</p>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground">
+                                  Booked: <strong>{cap.current_count}</strong> / {cap.max_capacity}
+                                </span>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusColor}`}>
+                                  {available === 0 ? 'Full' : `${available} left`}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {/* Mini capacity bar */}
+                              <div className="w-16 h-1.5 rounded-full bg-border/30 overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all ${
+                                    ratio <= 0.3 ? 'bg-amber-500' : ratio === 0 ? 'bg-red-500' : 'bg-emerald-500'
+                                  }`}
+                                  style={{ width: `${(cap.current_count / cap.max_capacity) * 100}%` }}
+                                />
+                              </div>
+                              <button
+                                onClick={() => deleteCapacityLimit(cap.id)}
+                                className="text-muted-foreground hover:text-destructive transition-colors"
+                                aria-label={`Remove limit for ${cap.date}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Info card */}
+            <Card className="glass-card border-primary/20">
+              <CardContent className="p-4">
+                <div className="flex gap-3 items-start text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
+                  <p className="text-muted-foreground leading-relaxed">
+                    <strong className="text-foreground">How it works:</strong>{' '}
+                    When a capacity limit is set for a date, hikers see the remaining slots live on the booking calendar.
+                    Once confirmed bookings fill the limit, that date shows as "Full" and cannot be booked.
+                    Deleting a limit reverts the date to the default of 100 hikers/day.
+                  </p>
                 </div>
               </CardContent>
             </Card>
