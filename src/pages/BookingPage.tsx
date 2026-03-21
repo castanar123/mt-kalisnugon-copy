@@ -14,11 +14,6 @@ import {
   Loader2,
   Clock,
   Info,
-  CloudRain,
-  ThermometerSun,
-  TriangleAlert,
-  Sparkles,
-  MessageCircleQuestion,
   ChevronRight,
   ChevronLeft,
   Shield,
@@ -37,7 +32,24 @@ import { format } from 'date-fns';
 import { encodeMeta } from '@/lib/bookingMeta';
 import { confirmReservation } from '@/lib/notification-service';
 import { CapacityCalendar, type DayCapacityMap } from '@/components/booking/CapacityCalendar';
+import BookingAIChat, { type GroupComposition } from '@/components/booking/BookingAIChat';
+import BookingInsightsPanel from '@/components/booking/BookingInsightsPanel';
 import { cn } from '@/lib/utils';
+
+/* ── Weather code → human-readable label (Open-Meteo) ── */
+function weatherCodeToLabel(code: number): string {
+  if (code === 0) return 'Clear Sky';
+  if ([1, 2, 3].includes(code)) return 'Partly Cloudy';
+  if ([45, 48].includes(code)) return 'Foggy';
+  if ([51, 53, 55].includes(code)) return 'Light Drizzle';
+  if ([61, 63, 65].includes(code)) return 'Rainy';
+  if ([71, 73, 75, 77].includes(code)) return 'Snow';
+  if ([80, 81, 82].includes(code)) return 'Rain Showers';
+  if ([85, 86].includes(code)) return 'Snow Showers';
+  if (code === 95) return 'Thunderstorm';
+  if ([96, 99].includes(code)) return 'Thunderstorm with Hail';
+  return 'Variable Conditions';
+}
 
 /* ─── Types ─── */
 type HikeType = 'day' | 'night';
@@ -90,6 +102,11 @@ type SubmittedBooking = {
   fullName: string;
   age: string;
   emailAddress: string;
+  phoneNumber: string;
+  province: string;
+  city: string;
+  companions: string[];
+  medicalNotes: string;
 };
 
 /* ─── Helpers ─── */
@@ -131,7 +148,7 @@ export default function BookingPage() {
   const [customTimeInput, setCustomTimeInput] = useState('');
   const [monthCapacity, setMonthCapacity] = useState<DayCapacityMap>({});
   const [smartGuideEnabled, setSmartGuideEnabled] = useState(false);
-  const [smartGuideDismissed, setSmartGuideDismissed] = useState(false);
+  const [groupComposition, setGroupComposition] = useState<GroupComposition | null>(null);
   const [weatherInsight, setWeatherInsight] = useState<WeatherSnapshot | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
@@ -294,7 +311,7 @@ export default function BookingPage() {
         maxTempC: payload.daily.temperature_2m_max[idx],
         minTempC: payload.daily.temperature_2m_min[idx],
         rainProbability: payload.daily.precipitation_probability_max[idx] ?? 0,
-        condition: `Code ${payload.daily.weathercode[idx] ?? '-'}`,
+        condition: weatherCodeToLabel(payload.daily.weathercode[idx] ?? -1),
       });
     } catch (err: unknown) {
       setWeatherInsight(null);
@@ -308,6 +325,13 @@ export default function BookingPage() {
     if (!smartGuideEnabled || !date) return;
     void fetchSmartWeather(date);
   }, [smartGuideEnabled, date, fetchSmartWeather]);
+
+  const handleClearInsights = useCallback(() => {
+    setSmartGuideEnabled(false);
+    setWeatherInsight(null);
+    setWeatherError(null);
+    setWeatherLoading(false);
+  }, []);
 
   const smartRecommendations = useMemo(() => {
     if (!smartGuideEnabled || !date || !weatherInsight) return null;
@@ -571,33 +595,6 @@ export default function BookingPage() {
                 {/* ═══════════════ STEP 1: SCHEDULE ═══════════════ */}
                 {step === 1 && (
                   <div className="space-y-5">
-                    {!smartGuideEnabled && !smartGuideDismissed && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="rounded-xl border border-primary/20 bg-primary/5 p-4"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold flex items-center gap-2">
-                              <Sparkles className="h-4 w-4 text-primary" />
-                              🧠 Smart Assistance
-                            </p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Would you like help optimizing your hike schedule based on weather and conditions?
-                            </p>
-                          </div>
-                          <div className="flex gap-2">
-                            <Button size="sm" onClick={() => setSmartGuideEnabled(true)}>
-                              Enable Smart Guide
-                            </Button>
-                            <Button size="sm" variant="outline" onClick={() => setSmartGuideDismissed(true)}>
-                              Maybe Later
-                            </Button>
-                          </div>
-                        </div>
-                      </motion.div>
-                    )}
 
                     <div className="text-center">
                       <h2 className="text-xl font-bold">Select Schedule</h2>
@@ -671,15 +668,7 @@ export default function BookingPage() {
                             )}
                           </span>
                         </motion.div>
-                        {smartGuideEnabled && (
-                          <motion.div
-                            initial={{ opacity: 0, x: 8 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            className="mt-2 ml-auto max-w-sm rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-xs text-primary"
-                          >
-                            AI note: Great, I am now optimizing your plan for <strong>{format(date, 'MMMM d, yyyy')}</strong>.
-                          </motion.div>
-                        )}
+
                       </div>
                     )}
 
@@ -818,75 +807,6 @@ export default function BookingPage() {
                       </AnimatePresence>
                     </div>
 
-                    <AnimatePresence>
-                      {smartGuideEnabled && (
-                        <motion.div
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -10 }}
-                          className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-3"
-                        >
-                          <div className="flex items-center justify-between">
-                            <p className="text-sm font-semibold">Plan Insights</p>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setSmartGuideEnabled((prev) => !prev)}
-                            >
-                              Smart Guide: ON
-                            </Button>
-                          </div>
-                          {!date && (
-                            <p className="text-xs text-muted-foreground">Select a date to load weather-based insights.</p>
-                          )}
-                          {weatherLoading && date && (
-                            <p className="text-xs text-muted-foreground">Checking weather and trail conditions...</p>
-                          )}
-                          {weatherError && date && (
-                            <p className="text-xs text-destructive">{weatherError}</p>
-                          )}
-                          {smartRecommendations && weatherInsight && (
-                            <div className="space-y-2 text-xs">
-                              <div className="rounded-lg bg-background/60 border border-border/20 p-3">
-                                <p className="font-semibold mb-1">Best Start Time: {smartRecommendations.bestTime}</p>
-                                <p className="text-muted-foreground">
-                                  Forecast: {weatherInsight.condition} | Temp {Math.round(weatherInsight.minTempC)}-{Math.round(weatherInsight.maxTempC)}°C | Rain {Math.round(weatherInsight.rainProbability)}%
-                                </p>
-                              </div>
-                              <div className="rounded-lg border border-border/20 bg-background/60 p-3">
-                                <p className="font-medium mb-1">Suggested actions</p>
-                                <ul className="space-y-1 text-muted-foreground">
-                                  <li>- Start around <span className="font-semibold text-foreground">{smartRecommendations.bestTime}</span> for better comfort and visibility.</li>
-                                  <li>- Bring enough water and trail shoes with good grip.</li>
-                                  <li>- Recheck ranger updates before departure time.</li>
-                                </ul>
-                              </div>
-                              {smartRecommendations.highHeat && (
-                                <div className="flex items-start gap-2 text-amber-700 dark:text-amber-300">
-                                  <ThermometerSun className="h-4 w-4 mt-0.5" />
-                                  <p>Heat is likely higher after 08:00. Starting before 07:00 is strongly advised.</p>
-                                </div>
-                              )}
-                              {smartRecommendations.highRain && (
-                                <div className="flex items-start gap-2 text-amber-700 dark:text-amber-300">
-                                  <CloudRain className="h-4 w-4 mt-0.5" />
-                                  <p>Rain chance is above 50%. Trails may be slippery, especially on descents.</p>
-                                </div>
-                              )}
-                              <div className="flex items-start gap-2 text-muted-foreground">
-                                <Users className="h-4 w-4 mt-0.5" />
-                                <p>{smartRecommendations.groupMessage}</p>
-                              </div>
-                              <div className="flex items-start gap-2 text-destructive">
-                                <TriangleAlert className="h-4 w-4 mt-0.5" />
-                                <p>⚠ Recommendations only. You may proceed at your own risk.</p>
-                              </div>
-                            </div>
-                          )}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
                   </div>
                 )}
 
@@ -1148,12 +1068,29 @@ export default function BookingPage() {
         </div>
       </div>
 
-      <div className="fixed right-5 bottom-5 z-40">
-        <Button className="rounded-full shadow-lg" onClick={() => navigate('/chat')}>
-          <MessageCircleQuestion className="h-4 w-4 mr-2" />
-          💬 Need Help? Ask AI Assistant
-        </Button>
-      </div>
+      {/* Floating AI Chat — left side */}
+      <BookingAIChat
+        date={date}
+        groupSize={groupSize}
+        hikeType={hikeType}
+        weatherInsight={weatherInsight}
+        groupComposition={groupComposition}
+        onGroupCompositionSet={setGroupComposition}
+      />
+
+      {/* Floating AI Insights Panel — right side (desktop) */}
+      <BookingInsightsPanel
+        date={date}
+        smartGuideEnabled={smartGuideEnabled}
+        weatherInsight={weatherInsight}
+        weatherLoading={weatherLoading}
+        weatherError={weatherError}
+        smartRecommendations={smartRecommendations}
+        groupSize={groupSize}
+        hikeType={hikeType}
+        onToggleSmartGuide={setSmartGuideEnabled}
+        onClear={handleClearInsights}
+      />
     </div>
   );
 }
