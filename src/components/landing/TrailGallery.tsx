@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ChevronLeft, ChevronRight, Camera, Map, Sparkles } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Camera, Map } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
 
@@ -29,7 +29,7 @@ export default function TrailGallery() {
   };
 
   return (
-    <section className="py-24 px-4 relative overflow-hidden section-warm-overlay">
+    <section id="learn-more" className="py-24 px-4 relative overflow-hidden section-warm-overlay">
       {/* Decorative background elements */}
       <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-bl from-primary/5 to-transparent rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-0 left-0 w-80 h-80 bg-gradient-to-tr from-accent/5 to-transparent rounded-full blur-3xl pointer-events-none" />
@@ -46,7 +46,6 @@ export default function TrailGallery() {
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm mb-5 border border-primary/20">
             <Camera className="h-4 w-4" />
             Trail Gallery
-            <Sparkles className="h-3.5 w-3.5 text-accent" />
           </div>
           <h2 className="text-3xl md:text-5xl font-bold mb-4 tracking-tight">
             Discover the <span className="text-gradient">Beauty</span> of Kalisungan

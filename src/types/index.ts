@@ -8,6 +8,14 @@ export interface BookingMeta {
   adjustedDate?: string;        // Proposed new date (yyyy-MM-dd) from admin
   adjustedTime?: string;        // e.g. "07:00 AM"
   guidePhone?: string;
+  fullName?: string;
+  age?: string;
+  emailAddress?: string;
+  phoneNumber?: string;
+  province?: string;
+  city?: string;
+  companions?: string[];
+  medicalNotes?: string;
 }
 
 export interface Profile {

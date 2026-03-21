@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -47,6 +48,7 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import { parseMeta, encodeMeta } from '@/lib/bookingMeta';
+import { addAnnouncement, loadAnnouncements, removeAnnouncement, type AdminAnnouncement } from '@/lib/announcements';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import {
@@ -80,15 +82,6 @@ const GUIDE_STATUS_STYLES: Record<string, string> = {
   'off-duty': 'bg-muted text-muted-foreground',
 };
 
-/* ── Mock announcements (replace with Supabase when table is ready) ── */
-interface Announcement {
-  id: string;
-  title: string;
-  body: string;
-  type: 'info' | 'warning' | 'closure';
-  created_at: string;
-}
-
 const ANNOUNCEMENT_TYPE_STYLES: Record<string, string> = {
   info: 'bg-primary/10 text-primary border-primary/30',
   warning: 'bg-warning/10 text-yellow-700 dark:text-yellow-400 border-warning/30',
@@ -102,10 +95,11 @@ export default function AdminDashboard() {
   const [zones, setZones] = useState<any[]>([]);
 
   /* ── Announcements state ── */
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [announcements, setAnnouncements] = useState<AdminAnnouncement[]>([]);
   const [annTitle, setAnnTitle] = useState('');
   const [annBody, setAnnBody] = useState('');
   const [annType, setAnnType] = useState<'info' | 'warning' | 'closure'>('info');
+  const [annImportant, setAnnImportant] = useState(false);
   const [annSending, setAnnSending] = useState(false);
 
   /* ── Guide state ── */
@@ -136,6 +130,7 @@ export default function AdminDashboard() {
     loadData();
     loadPendingBookings();
     loadUpcomingCapacities();
+    setAnnouncements(loadAnnouncements());
   }, []);
 
   /* ── Capacity Management ── */
@@ -303,23 +298,25 @@ export default function AdminDashboard() {
     }
     setAnnSending(true);
     await new Promise((r) => setTimeout(r, 800)); // Simulate API call
-    const newAnn: Announcement = {
+    const newAnn: AdminAnnouncement = {
       id: Date.now().toString(),
       title: annTitle.trim(),
       body: annBody.trim(),
       type: annType,
       created_at: new Date().toISOString(),
+      isImportant: annImportant || annType === 'warning' || annType === 'closure',
     };
-    setAnnouncements((prev) => [newAnn, ...prev]);
+    setAnnouncements(addAnnouncement(newAnn));
     setAnnTitle('');
     setAnnBody('');
     setAnnType('info');
+    setAnnImportant(false);
     setAnnSending(false);
     toast.success('Announcement posted!');
   };
 
   const deleteAnnouncement = (id: string) => {
-    setAnnouncements((prev) => prev.filter((a) => a.id !== id));
+    setAnnouncements(removeAnnouncement(id));
     toast.success('Announcement removed.');
   };
 
@@ -870,6 +867,16 @@ export default function AdminDashboard() {
                     />
                     <p className="text-xs text-muted-foreground">{annBody.length}/500</p>
                   </div>
+                  <div className="flex items-center gap-2 rounded-lg border border-border/20 bg-secondary/20 p-3">
+                    <Checkbox
+                      id="annImportant"
+                      checked={annImportant}
+                      onCheckedChange={(v) => setAnnImportant(!!v)}
+                    />
+                    <Label htmlFor="annImportant" className="text-sm cursor-pointer">
+                      Mark as important (show on user dashboard)
+                    </Label>
+                  </div>
                   <Button className="w-full gap-2" onClick={postAnnouncement} disabled={annSending}>
                     {annSending ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -913,6 +920,11 @@ export default function AdminDashboard() {
                             {a.type === 'closure' && <AlertTriangle className="h-3.5 w-3.5" />}
                             {a.type === 'info' && <CheckCircle2 className="h-3.5 w-3.5" />}
                             <span className="font-semibold text-sm">{a.title}</span>
+                            {a.isImportant && (
+                              <Badge className="text-[10px] bg-destructive/15 text-destructive border-destructive/30">
+                                Important
+                              </Badge>
+                            )}
                           </div>
                           <p className="text-sm leading-relaxed opacity-90">{a.body}</p>
                           <p className="text-xs opacity-60 mt-2">

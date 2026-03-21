@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,6 +14,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const { signIn } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,7 +25,8 @@ export default function Login() {
       toast.error(error.message);
     } else {
       toast.success('Welcome back!');
-      navigate('/dashboard');
+      const redirectPath = searchParams.get('redirect');
+      navigate(redirectPath || '/dashboard');
     }
   };
 
@@ -60,7 +62,13 @@ export default function Login() {
           </form>
 
           <div className="mt-4 text-center text-sm text-muted-foreground">
-            Don't have an account? <Link to="/register" className="text-primary hover:underline">Sign Up</Link>
+            Don't have an account?{' '}
+            <Link
+              to={searchParams.get('redirect') ? `/register?redirect=${encodeURIComponent(searchParams.get('redirect') || '')}` : '/register'}
+              className="text-primary hover:underline"
+            >
+              Sign Up
+            </Link>
           </div>
         </div>
 

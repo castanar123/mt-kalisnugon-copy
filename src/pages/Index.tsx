@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Mountain, ArrowUpRight, Wind, Droplets, Trees, MapPin, Mail, Phone } from 'lucide-react';
@@ -9,6 +9,7 @@ import TrailGallery from '@/components/landing/TrailGallery';
 import HikerReviews from '@/components/landing/HikerReviews';
 import TrailOverview from '@/components/landing/TrailOverview';
 import ReservingGuide from '@/components/landing/ReservingGuide';
+import { useAuth } from '@/hooks/useAuth';
 
 type LiveWeather = {
   temperature: number;
@@ -49,8 +50,8 @@ function useLiveWeather(): { weather: LiveWeather | null; loading: boolean; erro
           weatherLabel: label,
         });
         setError(null);
-      } catch (e: any) {
-        setError(e?.message ?? 'Could not load weather');
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : 'Could not load weather');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -162,9 +163,19 @@ function WaveDivider({ className = '' }: { className?: string }) {
 
 export default function Index() {
   const { weather, loading, error } = useLiveWeather();
+  const { user } = useAuth();
+  const navigate = useNavigate();
 
   const handleLearnMore = () => {
     document.getElementById('learn-more')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const handleBookNow = () => {
+    if (user) {
+      navigate('/booking');
+      return;
+    }
+    navigate('/login?redirect=/booking');
   };
 
   return (
@@ -190,41 +201,22 @@ export default function Index() {
           <div className="max-w-6xl mx-auto flex flex-col lg:flex-row items-stretch gap-8 lg:gap-12 pt-20 sm:pt-24 pb-16">
             {/* Left: headline + CTAs */}
             <div className="flex-1 flex flex-col justify-center text-center lg:text-left">
-              <motion.div
-                animate={{ y: [0, -6, 0] }}
-                transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-                className="inline-flex items-center gap-3 px-4 py-2.5 rounded-full glass-card mx-auto lg:mx-0 mb-6"
-              >
-                <img
-                  src={logo}
-                  alt="Mt. Kalisungan logo"
-                  className="h-8 w-8 sm:h-9 sm:w-9 rounded-full object-cover bg-white/5 ring-1 ring-white/10"
-                />
-                <div className="leading-tight text-left">
-                  <div className="text-sm sm:text-base font-semibold text-foreground">
-                    Mt. Kalisungan
-                  </div>
-                  <div className="text-[11px] sm:text-xs text-muted-foreground">
-                    Calauan, Laguna • 622m
-                  </div>
-                </div>
-              </motion.div>
-
               <h1 className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-black mb-4 leading-tight text-white drop-shadow-[0_10px_35px_rgba(0,0,0,0.55)]">
                 Stunning <span className="text-gradient">High Treks</span>{' '}
                 <span className="block text-white/90">On Mount Kalisungan</span>
               </h1>
 
               <p className="text-sm sm:text-base md:text-lg text-white/75 max-w-xl mx-auto lg:mx-0 mb-8 drop-shadow-[0_8px_28px_rgba(0,0,0,0.45)]">
-                Plan, book, and track every step of your Kalisungan hike with live weather, elevation
-                insights, and GPS-guided navigation — built for both hikers and rangers.
+                Experience the beauty of Mount Kalisungan from every angle - hike along scenic ridgelines,
+                take in breathtaking 360-degree panoramic views, witness the sea of clouds at dawn, and
+                capture moments you'll never forget.
               </p>
 
               <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center lg:justify-start">
-                <Button asChild size="lg" className="text-base px-8 glow-primary">
-                  <Link to="/booking">
+                <Button size="lg" className="text-base px-8 glow-primary" onClick={handleBookNow}>
+                  <span className="inline-flex items-center">
                     Book Now <ArrowUpRight className="ml-2 h-4 w-4" />
-                  </Link>
+                  </span>
                 </Button>
                 <Button variant="outline" size="lg" className="text-base px-8" onClick={handleLearnMore}>
                   Learn More

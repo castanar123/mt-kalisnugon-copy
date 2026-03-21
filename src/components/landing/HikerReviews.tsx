@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Star, MessageSquarePlus, Send, Loader2, Quote } from 'lucide-react';
+import { MessageSquarePlus, Send, Loader2, Quote } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -77,41 +77,6 @@ function formatDate(dateStr: string): string {
   return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 }
 
-function averageRating(reviews: Review[]): string {
-  if (!reviews.length) return '0.0';
-  const avg = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
-  return avg.toFixed(1);
-}
-
-function StarRating({
-  rating,
-  interactive,
-  onChange,
-  size = 'md',
-}: {
-  rating: number;
-  interactive?: boolean;
-  onChange?: (r: number) => void;
-  size?: 'sm' | 'md';
-}) {
-  const sizeClass = size === 'sm' ? 'h-3.5 w-3.5' : 'h-4 w-4';
-  return (
-    <div className="flex items-center gap-0.5">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <Star
-          key={i}
-          className={`${sizeClass} transition-colors ${
-            i < rating
-              ? 'text-amber-500 fill-amber-500 dark:text-primary dark:fill-primary'
-              : 'text-muted-foreground/30'
-          } ${interactive ? 'cursor-pointer hover:text-amber-500 dark:hover:text-primary' : ''}`}
-          onClick={() => interactive && onChange?.(i + 1)}
-        />
-      ))}
-    </div>
-  );
-}
-
 function TrailBadge({ trail }: { trail: string }) {
   return (
     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border border-primary/40 text-primary bg-primary/5 whitespace-nowrap">
@@ -154,7 +119,6 @@ function ReviewForm({ onSubmitted }: { onSubmitted: () => void }) {
   const { user } = useAuth();
   const [name, setName] = useState('');
   const [trail, setTrail] = useState('');
-  const [rating, setRating] = useState(5);
   const [text, setText] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -169,7 +133,7 @@ function ReviewForm({ onSubmitted }: { onSubmitted: () => void }) {
       user_id: user.id,
       reviewer_name: name.trim().slice(0, 100),
       trail_name: trail,
-      rating,
+      rating: 5,
       review_text: text.trim().slice(0, 500),
     });
 
@@ -178,7 +142,7 @@ function ReviewForm({ onSubmitted }: { onSubmitted: () => void }) {
       console.error(error);
     } else {
       toast.success('Review submitted! It will appear after admin approval.');
-      setName(''); setTrail(''); setRating(5); setText('');
+      setName(''); setTrail(''); setText('');
       onSubmitted();
     }
     setSubmitting(false);
@@ -196,10 +160,6 @@ function ReviewForm({ onSubmitted }: { onSubmitted: () => void }) {
             <SelectItem value="Scenic Loop">Scenic Loop</SelectItem>
           </SelectContent>
         </Select>
-      </div>
-      <div>
-        <label className="text-sm text-muted-foreground mb-1.5 block">Your rating</label>
-        <StarRating rating={rating} interactive onChange={setRating} />
       </div>
       <Textarea
         placeholder="Share your hiking experience..."
@@ -236,8 +196,6 @@ export default function HikerReviews() {
 
   useEffect(() => { fetchReviews(); }, []);
 
-  const avg = averageRating(reviews);
-
   return (
     <section className="py-24 px-4 relative overflow-hidden section-warm-overlay">
       {/* Decorative background */}
@@ -260,15 +218,8 @@ export default function HikerReviews() {
             Real experiences from adventurers who conquered Mount Kalisungan.
           </p>
 
-          {/* Rating summary pill */}
-          <div className="inline-flex items-center gap-3 px-6 py-3 rounded-full cinematic-card">
-            <div className="flex items-center gap-0.5">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Star key={i} className="h-4 w-4 text-amber-500 fill-amber-500 dark:text-primary dark:fill-primary" />
-              ))}
-            </div>
-            <span className="font-bold text-lg text-foreground">{avg}</span>
-            <span className="text-sm text-muted-foreground">from {reviews.length} reviews</span>
+          <div className="inline-flex items-center gap-2 px-6 py-3 rounded-full cinematic-card text-sm text-muted-foreground">
+            Showing {reviews.length} hiker stories
           </div>
         </motion.div>
 

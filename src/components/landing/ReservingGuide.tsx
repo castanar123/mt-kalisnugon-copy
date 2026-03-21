@@ -6,7 +6,7 @@ const steps = [
     number: 1,
     icon: UserPlus,
     title: 'Reserve a Hiking Slot',
-    desc: 'Register via Prayerbundok in your application.',
+    desc: 'Book directly on this website: click Book Now, fill in your details, and submit your reservation.',
     color: 'from-emerald-500 to-green-600',
   },
   {

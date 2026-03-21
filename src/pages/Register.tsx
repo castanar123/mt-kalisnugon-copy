@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +17,7 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const { signUp } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   // Verification States
   const [step, setStep] = useState(1); // 1 = form, 2 = verification
@@ -27,7 +28,7 @@ export default function Register() {
 
   // Handle Resend Countdown
   useEffect(() => {
-    let interval: any;
+    let interval: ReturnType<typeof setInterval> | undefined;
     if (resendTimer > 0) {
       interval = setInterval(() => {
         setResendTimer((prev) => prev - 1);
@@ -60,8 +61,8 @@ export default function Register() {
 
       setStep(2);
       setResendTimer(30);
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to send verification code');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to send verification code');
     } finally {
       setLoading(false);
     }
@@ -89,7 +90,8 @@ export default function Register() {
       toast.error(error.message);
     } else {
       toast.success('Account created! You can now sign in.');
-      navigate('/login');
+      const redirectPath = searchParams.get('redirect');
+      navigate(redirectPath ? `/login?redirect=${encodeURIComponent(redirectPath)}` : '/login');
     }
   };
 
@@ -203,7 +205,13 @@ export default function Register() {
 
           {step === 1 && (
             <div className="mt-4 text-center text-sm text-muted-foreground">
-              Already have an account? <Link to="/login" className="text-primary hover:underline">Sign In</Link>
+              Already have an account?{' '}
+              <Link
+                to={searchParams.get('redirect') ? `/login?redirect=${encodeURIComponent(searchParams.get('redirect') || '')}` : '/login'}
+                className="text-primary hover:underline"
+              >
+                Sign In
+              </Link>
             </div>
           )}
         </div>

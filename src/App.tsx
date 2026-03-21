@@ -18,6 +18,7 @@ import HikerDashboard from "./pages/HikerDashboard";
 import ProfilePage from "./pages/ProfilePage";
 import DashboardRedirect from "./pages/DashboardRedirect";
 import GuideDashboard from "./pages/GuideDashboard";
+import NotificationsPage from "./pages/NotificationsPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -44,6 +45,7 @@ const App = () => (
               <Route path="/guide" element={<GuideDashboard />} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/dashboard" element={<DashboardRedirect />} />
+              <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AuthProvider>

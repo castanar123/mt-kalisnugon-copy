@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,11 +13,16 @@ import {
   Users,
   Loader2,
   Clock,
-  ShieldAlert,
   Info,
+  CloudRain,
+  ThermometerSun,
+  TriangleAlert,
+  Sparkles,
+  MessageCircleQuestion,
   ChevronRight,
   ChevronLeft,
   Shield,
+  UserRound,
   ClipboardCheck,
   Check,
   Sun,
@@ -42,6 +48,13 @@ interface TimeOption {
   recommended?: boolean;
 }
 
+interface WeatherSnapshot {
+  maxTempC: number;
+  minTempC: number;
+  rainProbability: number;
+  condition: string;
+}
+
 /* ─── Constants ─── */
 const HIKE_TIME_OPTIONS: Record<HikeType, TimeOption[]> = {
   day: [
@@ -61,12 +74,23 @@ const HIKE_TIME_OPTIONS: Record<HikeType, TimeOption[]> = {
 
 const STEPS = [
   { id: 1, label: 'Schedule', icon: CalendarCheck },
-  { id: 2, label: 'Safety', icon: ShieldAlert },
+  { id: 2, label: 'Details', icon: UserRound },
   { id: 3, label: 'Agreement', icon: Shield },
   { id: 4, label: 'Confirm', icon: ClipboardCheck },
 ];
 
 const DEFAULT_MAX_CAPACITY = 100;
+
+type SubmittedBooking = {
+  booking_date: string;
+  group_size: number;
+  qr_code_data: string;
+  hikeType: HikeType;
+  hikeTime: string;
+  fullName: string;
+  age: string;
+  emailAddress: string;
+};
 
 /* ─── Helpers ─── */
 function formatTimeInput(time24: string): string {
@@ -77,9 +101,25 @@ function formatTimeInput(time24: string): string {
   return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
+function parseHourFromTime12(time12: string): number {
+  const [time, period] = time12.split(' ');
+  if (!time || !period) return 0;
+  const [h] = time.split(':').map(Number);
+  const normalized = h % 12;
+  return period.toUpperCase() === 'PM' ? normalized + 12 : normalized;
+}
+
+function dayDifference(target: Date): number {
+  const today = new Date();
+  const a = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const b = new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime();
+  return Math.round((b - a) / (1000 * 60 * 60 * 24));
+}
+
 /* ─── Component ─── */
 export default function BookingPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [step, setStep] = useState(1);
 
   // ── Step 1: Schedule
@@ -90,19 +130,30 @@ export default function BookingPage() {
   const [useCustomTime, setUseCustomTime] = useState(false);
   const [customTimeInput, setCustomTimeInput] = useState('');
   const [monthCapacity, setMonthCapacity] = useState<DayCapacityMap>({});
+  const [smartGuideEnabled, setSmartGuideEnabled] = useState(false);
+  const [smartGuideDismissed, setSmartGuideDismissed] = useState(false);
+  const [weatherInsight, setWeatherInsight] = useState<WeatherSnapshot | null>(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [weatherError, setWeatherError] = useState<string | null>(null);
 
-  // ── Step 2: Safety
-  const [emergName, setEmergName] = useState('');
-  const [emergPhone, setEmergPhone] = useState('');
-  const [bloodType, setBloodType] = useState('');
-  const [notes, setNotes] = useState('');
+  // ── Step 2: Personal details
+  const [fullName, setFullName] = useState('');
+  const [age, setAge] = useState('');
+  const [emailAddress, setEmailAddress] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [province, setProvince] = useState('');
+  const [city, setCity] = useState('');
+  const [companions, setCompanions] = useState<string[]>([]);
+  const [medicalNotes, setMedicalNotes] = useState('');
 
   // ── Step 3: Agreement
   const [agreedRules, setAgreedRules] = useState(false);
   const [agreedPrivacy, setAgreedPrivacy] = useState(false);
+  const [hasScrolledRulesToEnd, setHasScrolledRulesToEnd] = useState(false);
+  const rulesRef = useRef<HTMLDivElement | null>(null);
 
   const [loading, setLoading] = useState(false);
-  const [booking, setBooking] = useState<any>(null);
+  const [booking, setBooking] = useState<SubmittedBooking | null>(null);
 
   /* ── Capacity fetching ── */
   const fetchMonthCapacity = useCallback(async (year: number, month: number) => {
@@ -116,7 +167,7 @@ export default function BookingPage() {
     if (data) {
       setMonthCapacity((prev) => {
         const map = { ...prev };
-        (data as any[]).forEach((row) => {
+        data.forEach((row) => {
           map[row.date] = {
             max_capacity: row.max_capacity,
             current_count: row.current_count,
@@ -138,7 +189,7 @@ export default function BookingPage() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'daily_capacity' },
         (payload) => {
-          const row = payload.new as any;
+          const row = payload.new as { date?: string; max_capacity?: number; current_count?: number };
           if (row?.date) {
             setMonthCapacity((prev) => ({
               ...prev,
@@ -155,6 +206,36 @@ export default function BookingPage() {
     return () => { supabase.removeChannel(channel); };
   }, [fetchMonthCapacity]);
 
+  useEffect(() => {
+    if (!user) return;
+    setFullName((prev) => prev || user.user_metadata?.full_name || '');
+    setEmailAddress((prev) => prev || user.email || '');
+
+    const fetchProfile = async () => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('full_name, phone')
+        .eq('user_id', user.id)
+        .single();
+
+      if (data?.full_name) setFullName((prev) => prev || data.full_name);
+      if (data?.phone) setPhoneNumber((prev) => prev || data.phone);
+    };
+
+    void fetchProfile();
+  }, [user]);
+
+  useEffect(() => {
+    const neededCompanions = Math.max(0, groupSize - 1);
+    setCompanions((prev) => {
+      if (prev.length === neededCompanions) return prev;
+      if (prev.length < neededCompanions) {
+        return [...prev, ...Array.from({ length: neededCompanions - prev.length }, () => '')];
+      }
+      return prev.slice(0, neededCompanions);
+    });
+  }, [groupSize]);
+
   /* ── Derived slot count for selected date ── */
   const slotsForDate = useMemo(() => {
     if (!date) return null;
@@ -164,6 +245,102 @@ export default function BookingPage() {
     const current = cap?.current_count ?? 0;
     return Math.max(0, max - current);
   }, [date, monthCapacity]);
+
+  const fetchSmartWeather = useCallback(async (selectedDate: Date) => {
+    const weatherApiKey = import.meta.env.VITE_WEATHERAPI_KEY as string | undefined;
+    const formattedDate = format(selectedDate, 'yyyy-MM-dd');
+
+    try {
+      setWeatherLoading(true);
+      setWeatherError(null);
+
+      if (weatherApiKey) {
+        const diff = Math.max(1, Math.min(10, dayDifference(selectedDate) + 1));
+        const response = await fetch(
+          `https://api.weatherapi.com/v1/forecast.json?key=${weatherApiKey}&q=14.1475,121.3454&days=${diff}&aqi=no&alerts=no`,
+        );
+        if (!response.ok) throw new Error(`WeatherAPI request failed (${response.status})`);
+        const payload = await response.json() as {
+          forecast?: { forecastday?: Array<{ date: string; day: { maxtemp_c: number; mintemp_c: number; daily_chance_of_rain: number; condition?: { text?: string } } }> };
+        };
+        const selected = payload.forecast?.forecastday?.find((item) => item.date === formattedDate);
+        if (!selected) throw new Error('No forecast available for the selected date');
+        setWeatherInsight({
+          maxTempC: selected.day.maxtemp_c,
+          minTempC: selected.day.mintemp_c,
+          rainProbability: Number(selected.day.daily_chance_of_rain ?? 0),
+          condition: selected.day.condition?.text ?? 'Forecast available',
+        });
+        return;
+      }
+
+      const response = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=14.1475&longitude=121.3454&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode&timezone=Asia%2FManila&forecast_days=16`,
+      );
+      if (!response.ok) throw new Error(`Open-Meteo request failed (${response.status})`);
+      const payload = await response.json() as {
+        daily?: {
+          time: string[];
+          temperature_2m_max: number[];
+          temperature_2m_min: number[];
+          precipitation_probability_max: number[];
+          weathercode: number[];
+        };
+      };
+
+      const idx = payload.daily?.time?.findIndex((d) => d === formattedDate) ?? -1;
+      if (idx < 0 || !payload.daily) throw new Error('No forecast available for the selected date');
+      setWeatherInsight({
+        maxTempC: payload.daily.temperature_2m_max[idx],
+        minTempC: payload.daily.temperature_2m_min[idx],
+        rainProbability: payload.daily.precipitation_probability_max[idx] ?? 0,
+        condition: `Code ${payload.daily.weathercode[idx] ?? '-'}`,
+      });
+    } catch (err: unknown) {
+      setWeatherInsight(null);
+      setWeatherError(err instanceof Error ? err.message : 'Unable to load weather insight');
+    } finally {
+      setWeatherLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!smartGuideEnabled || !date) return;
+    void fetchSmartWeather(date);
+  }, [smartGuideEnabled, date, fetchSmartWeather]);
+
+  const smartRecommendations = useMemo(() => {
+    if (!smartGuideEnabled || !date || !weatherInsight) return null;
+
+    const selectedHour = parseHourFromTime12(hikeTime);
+    const highHeat = selectedHour >= 8 && weatherInsight.maxTempC >= 32;
+    const highRain = weatherInsight.rainProbability > 50;
+
+    const groupMessage = groupSize <= 2
+      ? 'Small group detected. Hiking with 3 or more improves safety coverage.'
+      : groupSize > 10
+      ? 'Large group detected. Consider splitting into smaller teams for trail flow and safety.'
+      : 'Group size is in an ideal range for pace and coordination.';
+
+    const recommendedTimes = HIKE_TIME_OPTIONS[hikeType]
+      .filter((opt) => {
+        const hour = parseHourFromTime12(opt.time);
+        if (highRain) return hour < 8;
+        if (weatherInsight.maxTempC >= 32) return hour < 8;
+        return true;
+      })
+      .map((opt) => opt.time);
+
+    const bestTime = recommendedTimes[0] ?? HIKE_TIME_OPTIONS[hikeType][0].time;
+
+    return {
+      bestTime,
+      highHeat,
+      highRain,
+      groupMessage,
+      recommendedTimes,
+    };
+  }, [smartGuideEnabled, date, weatherInsight, hikeTime, groupSize, hikeType]);
 
   /* ── Hike type change ── */
   const handleHikeTypeChange = (type: HikeType) => {
@@ -185,10 +362,16 @@ export default function BookingPage() {
       if (!hikeTime) return 'Please select a start time.';
     }
     if (step === 2) {
-      if (!emergName.trim() || !emergPhone.trim()) return 'Please provide emergency contact details.';
-      if (!bloodType.trim()) return 'Blood type is required for safety.';
+      if (!fullName.trim()) return 'Full name is required.';
+      if (!age.trim() || Number(age) < 1) return 'Please enter a valid age.';
+      if (!emailAddress.trim()) return 'Email address is required.';
+      if (groupSize > 1) {
+        const missing = companions.findIndex((name) => !name.trim());
+        if (missing >= 0) return `Please provide full name for Companion ${missing + 1}.`;
+      }
     }
     if (step === 3) {
+      if (!hasScrolledRulesToEnd) return 'Please read the full rules and scroll to the end before agreeing.';
       if (!agreedRules || !agreedPrivacy) return 'You must agree to all policies.';
     }
     return '';
@@ -206,7 +389,18 @@ export default function BookingPage() {
     const dateStr = format(date, 'yyyy-MM-dd');
     setLoading(true);
     const qrData = `KALISUNGAN-${user.id.slice(0, 8)}-${dateStr}-${Date.now()}`;
-    const metaNotes = encodeMeta({ userNotes: notes });
+    const companionNames = companions.map((name) => name.trim()).filter(Boolean);
+    const metaNotes = encodeMeta({
+      userNotes: medicalNotes,
+      fullName,
+      age,
+      emailAddress,
+      phoneNumber,
+      province,
+      city,
+      companions: companionNames,
+      medicalNotes,
+    });
 
     const { data, error } = await supabase
       .from('bookings')
@@ -215,8 +409,8 @@ export default function BookingPage() {
         booking_date: dateStr,
         group_size: groupSize,
         qr_code_data: qrData,
-        emergency_contact_name: emergName,
-        emergency_contact_phone: emergPhone,
+        emergency_contact_name: fullName,
+        emergency_contact_phone: phoneNumber,
         notes: metaNotes,
         status: 'pending',
       })
@@ -226,13 +420,13 @@ export default function BookingPage() {
     if (error) {
       toast.error(error.message);
     } else {
-      setBooking({ ...data, hikeTime, bloodType, hikeType });
+      setBooking({ ...data, hikeTime, hikeType, fullName, age, emailAddress, phoneNumber, province, city, companions: companionNames });
       toast.success('Booking submitted! Awaiting admin approval.');
       confirmReservation({
         id: data.id.toString(),
-        visitorName: user.user_metadata?.full_name || 'Hiker',
-        email: user.email || '',
-        phone: emergPhone,
+        visitorName: fullName,
+        email: emailAddress || user.email || '',
+        phone: phoneNumber,
         hikeDate: dateStr,
         trail: 'Mt. Kalisungan Summit',
         hikeTime,
@@ -270,8 +464,9 @@ export default function BookingPage() {
                 { label: 'Hike Type', value: booking.hikeType === 'night' ? '🌙 Night Hike' : '☀️ Day Hike' },
                 { label: 'Start Time', value: booking.hikeTime },
                 { label: 'Group Size', value: `${booking.group_size} pax` },
-                { label: 'Blood Type', value: booking.bloodType },
-                { label: 'Emergency Contact', value: booking.emergency_contact_name },
+                { label: 'Full Name', value: booking.fullName },
+                { label: 'Age', value: booking.age },
+                { label: 'Email', value: booking.emailAddress },
               ].map(({ label, value }) => (
                 <div key={label} className="flex justify-between py-1.5 border-b border-border/15">
                   <span className="text-muted-foreground">{label}</span>
@@ -289,7 +484,15 @@ export default function BookingPage() {
             <Button
               variant="outline"
               className="w-full"
-              onClick={() => { setBooking(null); setStep(1); setDate(undefined); setGroupSize(1); }}
+              onClick={() => {
+                setBooking(null);
+                setStep(1);
+                setDate(undefined);
+                setGroupSize(1);
+                setAgreedRules(false);
+                setAgreedPrivacy(false);
+                setHasScrolledRulesToEnd(false);
+              }}
             >
               Book Another Hike
             </Button>
@@ -368,6 +571,34 @@ export default function BookingPage() {
                 {/* ═══════════════ STEP 1: SCHEDULE ═══════════════ */}
                 {step === 1 && (
                   <div className="space-y-5">
+                    {!smartGuideEnabled && !smartGuideDismissed && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="rounded-xl border border-primary/20 bg-primary/5 p-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold flex items-center gap-2">
+                              <Sparkles className="h-4 w-4 text-primary" />
+                              🧠 Smart Assistance
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Would you like help optimizing your hike schedule based on weather and conditions?
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button size="sm" onClick={() => setSmartGuideEnabled(true)}>
+                              Enable Smart Guide
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => setSmartGuideDismissed(true)}>
+                              Maybe Later
+                            </Button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+
                     <div className="text-center">
                       <h2 className="text-xl font-bold">Select Schedule</h2>
                       <p className="text-sm text-muted-foreground mt-1">When do you plan to hike?</p>
@@ -419,26 +650,37 @@ export default function BookingPage() {
 
                     {/* Selected date info */}
                     {date && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className={cn(
-                          'flex items-center gap-3 px-4 py-2.5 rounded-xl border text-sm',
-                          slotsForDate !== null && slotsForDate < groupSize
-                            ? 'bg-destructive/10 border-destructive/30 text-destructive'
-                            : slotsForDate !== null && slotsForDate < 20
-                            ? 'bg-warning/10 border-warning/30 text-warning'
-                            : 'bg-primary/10 border-primary/30 text-primary',
-                        )}
-                      >
-                        <CalendarCheck className="h-4 w-4 flex-shrink-0" />
-                        <span>
-                          <strong>{format(date, 'MMMM d, yyyy')}</strong>
-                          {slotsForDate !== null && (
-                            <> — <strong>{slotsForDate}</strong> slot{slotsForDate !== 1 ? 's' : ''} available</>
+                      <div className="relative">
+                        <motion.div
+                          initial={{ opacity: 0, y: -4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className={cn(
+                            'flex items-center gap-3 px-4 py-2.5 rounded-xl border text-sm',
+                            slotsForDate !== null && slotsForDate < groupSize
+                              ? 'bg-destructive/10 border-destructive/30 text-destructive'
+                              : slotsForDate !== null && slotsForDate < 20
+                              ? 'bg-warning/10 border-warning/30 text-warning'
+                              : 'bg-primary/10 border-primary/30 text-primary',
                           )}
-                        </span>
-                      </motion.div>
+                        >
+                          <CalendarCheck className="h-4 w-4 flex-shrink-0" />
+                          <span>
+                            <strong>{format(date, 'MMMM d, yyyy')}</strong>
+                            {slotsForDate !== null && (
+                              <> — <strong>{slotsForDate}</strong> slot{slotsForDate !== 1 ? 's' : ''} available</>
+                            )}
+                          </span>
+                        </motion.div>
+                        {smartGuideEnabled && (
+                          <motion.div
+                            initial={{ opacity: 0, x: 8 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            className="mt-2 ml-auto max-w-sm rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-xs text-primary"
+                          >
+                            AI note: Great, I am now optimizing your plan for <strong>{format(date, 'MMMM d, yyyy')}</strong>.
+                          </motion.div>
+                        )}
+                      </div>
                     )}
 
                     {/* Group Size */}
@@ -494,6 +736,8 @@ export default function BookingPage() {
                               'flex flex-col items-center px-3 py-2.5 rounded-xl border-2 text-xs font-bold transition-all min-w-[76px]',
                               hikeTime === opt.time && !useCustomTime
                                 ? 'bg-primary border-primary text-primary-foreground shadow-md'
+                                : smartRecommendations?.recommendedTimes.includes(opt.time)
+                                ? 'border-amber-400/60 bg-amber-500/10 text-amber-700 dark:text-amber-300'
                                 : 'border-border/30 text-muted-foreground hover:border-primary/30 hover:bg-primary/5',
                             )}
                           >
@@ -503,12 +747,18 @@ export default function BookingPage() {
                                 'text-[9px] font-medium mt-0.5',
                                 hikeTime === opt.time && !useCustomTime
                                   ? 'text-primary-foreground/70'
+                                  : smartRecommendations?.recommendedTimes.includes(opt.time)
+                                  ? 'text-amber-600 dark:text-amber-300'
                                   : opt.recommended
                                   ? 'text-amber-500'
                                   : 'opacity-55',
                               )}
                             >
-                              {opt.recommended ? '★ Recommended' : opt.label}
+                              {smartRecommendations?.recommendedTimes.includes(opt.time)
+                                ? '⭐ Recommended'
+                                : opt.recommended
+                                ? '★ Recommended'
+                                : opt.label}
                             </span>
                           </button>
                         ))}
@@ -567,52 +817,194 @@ export default function BookingPage() {
                         )}
                       </AnimatePresence>
                     </div>
+
+                    <AnimatePresence>
+                      {smartGuideEnabled && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -10 }}
+                          className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-3"
+                        >
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-semibold">Plan Insights</p>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setSmartGuideEnabled((prev) => !prev)}
+                            >
+                              Smart Guide: ON
+                            </Button>
+                          </div>
+                          {!date && (
+                            <p className="text-xs text-muted-foreground">Select a date to load weather-based insights.</p>
+                          )}
+                          {weatherLoading && date && (
+                            <p className="text-xs text-muted-foreground">Checking weather and trail conditions...</p>
+                          )}
+                          {weatherError && date && (
+                            <p className="text-xs text-destructive">{weatherError}</p>
+                          )}
+                          {smartRecommendations && weatherInsight && (
+                            <div className="space-y-2 text-xs">
+                              <div className="rounded-lg bg-background/60 border border-border/20 p-3">
+                                <p className="font-semibold mb-1">Best Start Time: {smartRecommendations.bestTime}</p>
+                                <p className="text-muted-foreground">
+                                  Forecast: {weatherInsight.condition} | Temp {Math.round(weatherInsight.minTempC)}-{Math.round(weatherInsight.maxTempC)}°C | Rain {Math.round(weatherInsight.rainProbability)}%
+                                </p>
+                              </div>
+                              <div className="rounded-lg border border-border/20 bg-background/60 p-3">
+                                <p className="font-medium mb-1">Suggested actions</p>
+                                <ul className="space-y-1 text-muted-foreground">
+                                  <li>- Start around <span className="font-semibold text-foreground">{smartRecommendations.bestTime}</span> for better comfort and visibility.</li>
+                                  <li>- Bring enough water and trail shoes with good grip.</li>
+                                  <li>- Recheck ranger updates before departure time.</li>
+                                </ul>
+                              </div>
+                              {smartRecommendations.highHeat && (
+                                <div className="flex items-start gap-2 text-amber-700 dark:text-amber-300">
+                                  <ThermometerSun className="h-4 w-4 mt-0.5" />
+                                  <p>Heat is likely higher after 08:00. Starting before 07:00 is strongly advised.</p>
+                                </div>
+                              )}
+                              {smartRecommendations.highRain && (
+                                <div className="flex items-start gap-2 text-amber-700 dark:text-amber-300">
+                                  <CloudRain className="h-4 w-4 mt-0.5" />
+                                  <p>Rain chance is above 50%. Trails may be slippery, especially on descents.</p>
+                                </div>
+                              )}
+                              <div className="flex items-start gap-2 text-muted-foreground">
+                                <Users className="h-4 w-4 mt-0.5" />
+                                <p>{smartRecommendations.groupMessage}</p>
+                              </div>
+                              <div className="flex items-start gap-2 text-destructive">
+                                <TriangleAlert className="h-4 w-4 mt-0.5" />
+                                <p>⚠ Recommendations only. You may proceed at your own risk.</p>
+                              </div>
+                            </div>
+                          )}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                 )}
 
-                {/* ═══════════════ STEP 2: SAFETY ═══════════════ */}
+                {/* ═══════════════ STEP 2: PERSONAL DETAILS ═══════════════ */}
                 {step === 2 && (
                   <div className="space-y-6">
                     <div className="text-center mb-6">
-                      <h2 className="text-xl font-bold">Safety Records</h2>
-                      <p className="text-sm text-muted-foreground mt-1">Required for emergency preparedness.</p>
+                      <h2 className="text-xl font-bold">Hiker Details</h2>
+                      <p className="text-sm text-muted-foreground mt-1">Connected to your account but you can edit before submitting.</p>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="bloodType">Blood Type</Label>
+                        <Label htmlFor="fullName">Full Name</Label>
                         <Input
-                          id="bloodType"
-                          value={bloodType}
-                          onChange={(e) => setBloodType(e.target.value)}
-                          placeholder="e.g. O+"
-                          className="font-bold"
+                          id="fullName"
+                          value={fullName}
+                          onChange={(e) => setFullName(e.target.value)}
+                          placeholder="e.g. Juan Dela Cruz"
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="emergName">Emergency Contact Name</Label>
+                        <Label htmlFor="age">Age</Label>
                         <Input
-                          id="emergName"
-                          value={emergName}
-                          onChange={(e) => setEmergName(e.target.value)}
-                          placeholder="Name of Relative"
+                          id="age"
+                          type="number"
+                          min={1}
+                          value={age}
+                          onChange={(e) => setAge(e.target.value)}
+                          placeholder="e.g. 24"
                         />
                       </div>
-                      <div className="space-y-2 sm:col-span-2">
-                        <Label htmlFor="emergPhone">Emergency Contact Phone</Label>
+                      <div className="space-y-2">
+                        <Label htmlFor="emailAddress">Email Address</Label>
                         <Input
-                          id="emergPhone"
-                          value={emergPhone}
-                          onChange={(e) => setEmergPhone(e.target.value)}
+                          id="emailAddress"
+                          type="email"
+                          value={emailAddress}
+                          onChange={(e) => setEmailAddress(e.target.value)}
+                          placeholder="you@example.com"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="phoneNumber">Phone Number</Label>
+                        <Input
+                          id="phoneNumber"
+                          value={phoneNumber}
+                          onChange={(e) => setPhoneNumber(e.target.value)}
                           placeholder="09XXXXXXXXX"
                         />
                       </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="province">Province (Optional)</Label>
+                        <Input
+                          id="province"
+                          value={province}
+                          onChange={(e) => setProvince(e.target.value)}
+                          placeholder="Laguna"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="city">City (Optional)</Label>
+                        <Input
+                          id="city"
+                          value={city}
+                          onChange={(e) => setCity(e.target.value)}
+                          placeholder="Calauan"
+                        />
+                      </div>
                       <div className="space-y-2 sm:col-span-2">
-                        <Label htmlFor="notes">Special Medical Notes (Optional)</Label>
+                        <div className="flex items-center justify-between">
+                          <Label>Companion Full Names ({Math.max(0, groupSize - 1)})</Label>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setGroupSize((s) => Math.min(30, s + 1))}
+                          >
+                            + Add Companion
+                          </Button>
+                        </div>
+                        <div className="space-y-2">
+                          {companions.length === 0 && (
+                            <p className="text-xs text-muted-foreground">
+                              No companions yet. Increase group size to add companion full names.
+                            </p>
+                          )}
+                          {companions.map((companion, idx) => (
+                            <div key={`companion-${idx}`} className="flex items-center gap-2">
+                              <Input
+                                value={companion}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  setCompanions((prev) =>
+                                    prev.map((item, index) => (index === idx ? value : item)),
+                                  );
+                                }}
+                                placeholder={`Companion ${idx + 1} full name (e.g. Maria Santos)`}
+                              />
+                              {companions.length > 1 && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  onClick={() => setGroupSize((s) => Math.max(1, s - 1))}
+                                >
+                                  Remove
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label htmlFor="medicalNotes">Special Medical Notes (Optional)</Label>
                         <Textarea
-                          id="notes"
-                          value={notes}
-                          onChange={(e) => setNotes(e.target.value)}
-                          placeholder="Any allergies or medical conditions..."
+                          id="medicalNotes"
+                          value={medicalNotes}
+                          onChange={(e) => setMedicalNotes(e.target.value)}
+                          placeholder="Allergies, medical history, or reminders for rangers"
                         />
                       </div>
                     </div>
@@ -624,14 +1016,39 @@ export default function BookingPage() {
                   <div className="space-y-6">
                     <div className="text-center mb-6">
                       <h2 className="text-xl font-bold">Agreement</h2>
-                      <p className="text-sm text-muted-foreground mt-1">Please review our terms and policies.</p>
+                      <p className="text-sm text-muted-foreground mt-1">Read all rules below. You can only agree after scrolling to the end.</p>
                     </div>
+                    <div
+                      ref={rulesRef}
+                      onScroll={(e) => {
+                        const element = e.currentTarget;
+                        const reachedEnd = element.scrollTop + element.clientHeight >= element.scrollHeight - 8;
+                        if (reachedEnd) setHasScrolledRulesToEnd(true);
+                      }}
+                      className="h-48 overflow-y-auto rounded-xl border border-border/20 bg-secondary/10 p-4 text-sm leading-relaxed"
+                    >
+                      <p className="font-semibold mb-2">Trail Rules and Data Privacy Policy</p>
+                      <p>1. Follow ranger instructions at all times during registration, ascent, and descent.</p>
+                      <p>2. Stay on official trail routes and avoid restricted or dangerous areas.</p>
+                      <p>3. Practice Leave No Trace: bring back all trash and do not damage flora and fauna.</p>
+                      <p>4. Carry enough water, basic first-aid, and weather-appropriate gear.</p>
+                      <p>5. Report medical concerns before the hike and inform rangers of emergencies immediately.</p>
+                      <p>6. Respect local community guidelines at Barangay Lamot II and all checkpoints.</p>
+                      <p>7. Data Privacy: personal data is collected for booking verification, safety coordination, emergency response, and post-incident review.</p>
+                      <p>8. Data Privacy: your details may be accessed by authorized staff (admin/ranger) only for operations and safety.</p>
+                      <p>9. Data Privacy: companion details must be provided with their awareness and consent.</p>
+                      <p>10. You are responsible for providing accurate details for yourself and companions.</p>
+                    </div>
+                    {!hasScrolledRulesToEnd && (
+                      <p className="text-xs text-amber-600 font-medium">Please scroll to the end of the rules to enable agreement.</p>
+                    )}
                     <div className="space-y-4">
                       <div className="flex items-start space-x-3 p-4 rounded-xl bg-secondary/20 border border-border/15">
                         <Checkbox
                           id="rules"
                           checked={agreedRules}
                           onCheckedChange={(v) => setAgreedRules(!!v)}
+                          disabled={!hasScrolledRulesToEnd}
                           className="mt-1"
                         />
                         <Label htmlFor="rules" className="text-sm leading-relaxed cursor-pointer">
@@ -645,6 +1062,7 @@ export default function BookingPage() {
                           id="privacy"
                           checked={agreedPrivacy}
                           onCheckedChange={(v) => setAgreedPrivacy(!!v)}
+                          disabled={!hasScrolledRulesToEnd}
                           className="mt-1"
                         />
                         <Label htmlFor="privacy" className="text-sm leading-relaxed cursor-pointer">
@@ -670,8 +1088,11 @@ export default function BookingPage() {
                         { label: 'Hike Type', value: hikeType === 'night' ? '🌙 Night Hike' : '☀️ Day Hike' },
                         { label: 'Start Time', value: hikeTime },
                         { label: 'Group Size', value: `${groupSize} Pax` },
-                        { label: 'Emergency Contact', value: `${emergName} · ${emergPhone}` },
-                        { label: 'Blood Type', value: bloodType },
+                        { label: 'Full Name', value: fullName },
+                        { label: 'Age', value: age },
+                        { label: 'Email', value: emailAddress },
+                        { label: 'Address', value: [city, province].filter(Boolean).join(', ') || 'Not provided' },
+                        { label: 'Companions', value: companions.map((name) => name.trim()).filter(Boolean).join(', ') || 'None listed' },
                       ].map(({ label, value }) => (
                         <div
                           key={label}
@@ -725,6 +1146,13 @@ export default function BookingPage() {
             )}
           </div>
         </div>
+      </div>
+
+      <div className="fixed right-5 bottom-5 z-40">
+        <Button className="rounded-full shadow-lg" onClick={() => navigate('/chat')}>
+          <MessageCircleQuestion className="h-4 w-4 mr-2" />
+          💬 Need Help? Ask AI Assistant
+        </Button>
       </div>
     </div>
   );

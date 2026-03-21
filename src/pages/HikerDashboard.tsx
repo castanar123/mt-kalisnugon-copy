@@ -38,6 +38,7 @@ import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import SOSPanel from '@/components/core/SOSPanel';
 import { parseMeta } from '@/lib/bookingMeta';
+import { loadAnnouncements, type AdminAnnouncement } from '@/lib/announcements';
 
 const STATUS_STYLES: Record<string, string> = {
   confirmed: 'bg-primary/20 text-primary',
@@ -60,6 +61,7 @@ export default function HikerDashboard() {
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const [decliningId, setDecliningId] = useState<string | null>(null);
+  const [importantAnnouncements, setImportantAnnouncements] = useState<AdminAnnouncement[]>([]);
 
   useEffect(() => {
     if (!user) return;
@@ -81,6 +83,7 @@ export default function HikerDashboard() {
     ]);
     setBookings(b || []);
     setSessions(s || []);
+    setImportantAnnouncements(loadAnnouncements().filter((a) => a.isImportant));
   };
 
   const totalDistance = sessions.reduce((sum, s) => sum + Number(s.total_distance_km || 0), 0);
@@ -255,6 +258,30 @@ export default function HikerDashboard() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {importantAnnouncements.length > 0 && (
+          <Card className="glass-card border-destructive/30 mb-6">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Bell className="h-5 w-5 text-destructive" />
+                Important Announcements
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {importantAnnouncements.slice(0, 3).map((a) => (
+                <div key={a.id} className="rounded-xl border border-destructive/20 bg-destructive/5 p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="font-semibold text-sm">{a.title}</p>
+                    <Badge className="text-[10px] bg-destructive/15 text-destructive border-destructive/30">
+                      Important
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{a.body}</p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
 
         {/* ── HERO: Book a Hike CTA ── */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="mb-6">

@@ -2,10 +2,14 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/useTheme';
 import { Button } from '@/components/ui/button';
-import { Mountain, Map, MessageSquare, CalendarCheck, LayoutDashboard, LogOut, Menu, X, Moon, Sun, UserCircle } from 'lucide-react';
-import { useState } from 'react';
+import { Mountain, Map, MessageSquare, CalendarCheck, LayoutDashboard, LogOut, Menu, X, Moon, Sun, Bell, User } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import logo from '@/assets/logo.png';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { loadAnnouncements } from '@/lib/announcements';
+import { loadSeenNotificationIds } from '@/lib/notifications';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function Navbar() {
   const { user, role, signOut } = useAuth();
@@ -13,6 +17,7 @@ export default function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [notifCount, setNotifCount] = useState(0);
 
   const dashboardPath =
     role === 'admin' ? '/admin' :
@@ -22,13 +27,44 @@ export default function Navbar() {
 
   const navLinks = user
     ? [
-        { to: '/map', label: 'Trail Map', icon: Map },
-        { to: '/chat', label: 'AI Assistant', icon: MessageSquare },
-        { to: '/booking', label: 'Book Hike', icon: CalendarCheck },
         { to: dashboardPath, label: 'Dashboard', icon: LayoutDashboard },
-        { to: '/profile', label: 'Profile', icon: UserCircle },
+        { to: '/booking', label: 'Book Hike', icon: CalendarCheck },
+        { to: '/map', label: 'Map', icon: Map },
+        { to: '/chat', label: 'AI Assistant', icon: MessageSquare },
       ]
     : [];
+
+  const initials = useMemo(() => {
+    const fullName = (user?.user_metadata?.full_name as string | undefined)?.trim();
+    if (!fullName) return (user?.email?.[0] || 'U').toUpperCase();
+    return fullName
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((p) => p[0]?.toUpperCase() || '')
+      .join('');
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      setNotifCount(0);
+      return;
+    }
+    const loadNotifCount = async () => {
+      const seen = new Set(loadSeenNotificationIds(user.id));
+      const anns = loadAnnouncements().map((a) => `ann:${a.id}`);
+      const { data } = await supabase
+        .from('bookings')
+        .select('id,status')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      const bookingIds = (data || []).map((b) => `booking:${b.id}:${b.status}`);
+      const all = [...anns, ...bookingIds];
+      const unseen = all.filter((id) => !seen.has(id)).length;
+      setNotifCount(unseen);
+    };
+    void loadNotifCount();
+  }, [user, location.pathname]);
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -79,10 +115,39 @@ export default function Navbar() {
           </Button>
           {user ? (
             <>
-              <span className="text-xs px-2 py-1 rounded-full bg-primary/20 text-primary capitalize">{role}</span>
-              <Button variant="ghost" size="sm" onClick={handleLogout}>
-                <LogOut className="h-4 w-4 mr-1" /> Logout
+              <Button
+                variant="ghost"
+                size="icon"
+                className="relative"
+                onClick={() => navigate('/notifications')}
+                aria-label="Notifications"
+              >
+                <Bell className="h-4 w-4" />
+                {notifCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-destructive text-white text-[10px] leading-4 text-center">
+                    {notifCount > 9 ? '9+' : notifCount}
+                  </span>
+                )}
               </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="h-9 w-9 rounded-full bg-primary/20 text-primary font-bold text-sm">
+                    {initials}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuItem onClick={() => navigate('/profile')}>
+                    <User className="h-4 w-4 mr-2" /> Profile
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate('/notifications')}>
+                    <Bell className="h-4 w-4 mr-2" /> Notifications
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleLogout}>
+                    <LogOut className="h-4 w-4 mr-2" /> Logout
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </>
           ) : (
             <>
@@ -131,9 +196,17 @@ export default function Navbar() {
               ))}
               <div className="border-t border-border/30 my-2" />
               {user ? (
-                <Button variant="ghost" size="sm" className="justify-start" onClick={handleLogout}>
-                  <LogOut className="h-4 w-4 mr-2" /> Logout ({role})
-                </Button>
+                <>
+                  <Button variant="ghost" size="sm" className="justify-start" onClick={() => { navigate('/profile'); setMobileOpen(false); }}>
+                    <User className="h-4 w-4 mr-2" /> Profile
+                  </Button>
+                  <Button variant="ghost" size="sm" className="justify-start" onClick={() => { navigate('/notifications'); setMobileOpen(false); }}>
+                    <Bell className="h-4 w-4 mr-2" /> Notifications {notifCount > 0 ? `(${notifCount})` : ''}
+                  </Button>
+                  <Button variant="ghost" size="sm" className="justify-start" onClick={handleLogout}>
+                    <LogOut className="h-4 w-4 mr-2" /> Logout ({role})
+                  </Button>
+                </>
               ) : (
                 <>
                   <Button variant="ghost" size="sm" className="justify-start" onClick={() => { navigate('/login'); setMobileOpen(false); }}>Login</Button>

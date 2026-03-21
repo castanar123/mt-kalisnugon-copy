@@ -18,7 +18,7 @@ const trailStats = [
     icon: Clock,
     label: 'Estimated Hiking Time',
     value: '4-5 hours',
-    desc: 'Estimated hiking time is 4-6 hours depending on pace.',
+    desc: 'Estimated hiking time is 4-5 hours depending on pace.',
   },
   {
     icon: BarChart2,
