@@ -20,6 +20,7 @@ import DashboardRedirect from "./pages/DashboardRedirect";
 import GuideDashboard from "./pages/GuideDashboard";
 import NotificationsPage from "./pages/NotificationsPage";
 import NotFound from "./pages/NotFound";
+import RoleRoute from "@/components/auth/RoleRoute";
 
 const queryClient = new QueryClient();
 
@@ -39,10 +40,10 @@ const App = () => (
               <Route path="/map" element={<MapPage />} />
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/booking" element={<BookingPage />} />
-              <Route path="/admin" element={<AdminDashboard />} />
-              <Route path="/ranger" element={<RangerDashboard />} />
-              <Route path="/hiker" element={<HikerDashboard />} />
-              <Route path="/guide" element={<GuideDashboard />} />
+              <Route path="/admin" element={<RoleRoute allowedRoles={['admin']}><AdminDashboard /></RoleRoute>} />
+              <Route path="/ranger" element={<RoleRoute allowedRoles={['ranger']}><RangerDashboard /></RoleRoute>} />
+              <Route path="/hiker" element={<RoleRoute allowedRoles={['hiker']}><HikerDashboard /></RoleRoute>} />
+              <Route path="/guide" element={<RoleRoute allowedRoles={['guide']}><GuideDashboard /></RoleRoute>} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/dashboard" element={<DashboardRedirect />} />
               <Route path="/notifications" element={<NotificationsPage />} />

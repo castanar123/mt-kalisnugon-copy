@@ -100,6 +100,8 @@ export default function AdminDashboard() {
   const [annBody, setAnnBody] = useState('');
   const [annType, setAnnType] = useState<'info' | 'warning' | 'closure'>('info');
   const [annImportant, setAnnImportant] = useState(false);
+  const [annStartDate, setAnnStartDate] = useState('');
+  const [annEndDate, setAnnEndDate] = useState('');
   const [annSending, setAnnSending] = useState(false);
 
   /* ── Guide state ── */
@@ -112,6 +114,8 @@ export default function AdminDashboard() {
   /* ── Capacity Management state ── */
   const [capDate, setCapDate] = useState('');
   const [capMax, setCapMax] = useState(100);
+  const [capRangeStart, setCapRangeStart] = useState('');
+  const [capRangeEnd, setCapRangeEnd] = useState('');
   const [capSaving, setCapSaving] = useState(false);
   const [upcomingCapacities, setUpcomingCapacities] = useState<any[]>([]);
 
@@ -158,6 +162,42 @@ export default function AdminDashboard() {
       toast.success(`✅ Capacity for ${capDate} set to ${capMax} hikers.`);
       setCapDate('');
       setCapMax(100);
+      loadUpcomingCapacities();
+    }
+    setCapSaving(false);
+  };
+
+  const saveCapacityRange = async () => {
+    if (!capRangeStart || !capRangeEnd) {
+      toast.error('Please select both start and end dates.');
+      return;
+    }
+    if (capMax < 1) {
+      toast.error('Max capacity must be at least 1.');
+      return;
+    }
+    const start = new Date(`${capRangeStart}T00:00:00`);
+    const end = new Date(`${capRangeEnd}T00:00:00`);
+    if (end < start) {
+      toast.error('End date must be after start date.');
+      return;
+    }
+
+    const rows: Array<{ date: string; max_capacity: number }> = [];
+    const cursor = new Date(start);
+    while (cursor <= end) {
+      rows.push({ date: format(cursor, 'yyyy-MM-dd'), max_capacity: capMax });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    setCapSaving(true);
+    const { error } = await supabase.from('daily_capacity').upsert(rows, { onConflict: 'date' });
+    if (error) {
+      toast.error('Failed bulk update: ' + error.message);
+    } else {
+      toast.success(`Updated ${rows.length} day(s) to ${capMax} hikers/day.`);
+      setCapRangeStart('');
+      setCapRangeEnd('');
       loadUpcomingCapacities();
     }
     setCapSaving(false);
@@ -298,6 +338,8 @@ export default function AdminDashboard() {
     }
     setAnnSending(true);
     await new Promise((r) => setTimeout(r, 800)); // Simulate API call
+    const startsAt = annStartDate ? new Date(`${annStartDate}T00:00:00`).toISOString() : undefined;
+    const expiresAt = annEndDate ? new Date(`${annEndDate}T23:59:59`).toISOString() : undefined;
     const newAnn: AdminAnnouncement = {
       id: Date.now().toString(),
       title: annTitle.trim(),
@@ -305,12 +347,16 @@ export default function AdminDashboard() {
       type: annType,
       created_at: new Date().toISOString(),
       isImportant: annImportant || annType === 'warning' || annType === 'closure',
+      starts_at: startsAt,
+      expires_at: expiresAt,
     };
     setAnnouncements(addAnnouncement(newAnn));
     setAnnTitle('');
     setAnnBody('');
     setAnnType('info');
     setAnnImportant(false);
+    setAnnStartDate('');
+    setAnnEndDate('');
     setAnnSending(false);
     toast.success('Announcement posted!');
   };
@@ -867,6 +913,27 @@ export default function AdminDashboard() {
                     />
                     <p className="text-xs text-muted-foreground">{annBody.length}/500</p>
                   </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="annStartDate">Show From (optional)</Label>
+                      <Input
+                        id="annStartDate"
+                        type="date"
+                        value={annStartDate}
+                        onChange={(e) => setAnnStartDate(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="annEndDate">Expires On (optional)</Label>
+                      <Input
+                        id="annEndDate"
+                        type="date"
+                        value={annEndDate}
+                        onChange={(e) => setAnnEndDate(e.target.value)}
+                        min={annStartDate || undefined}
+                      />
+                    </div>
+                  </div>
                   <div className="flex items-center gap-2 rounded-lg border border-border/20 bg-secondary/20 p-3">
                     <Checkbox
                       id="annImportant"
@@ -930,6 +997,11 @@ export default function AdminDashboard() {
                           <p className="text-xs opacity-60 mt-2">
                             {format(new Date(a.created_at), 'MMM d, yyyy • h:mm a')}
                           </p>
+                          {(a.starts_at || a.expires_at) && (
+                            <p className="text-xs opacity-70 mt-1">
+                              Visible: {a.starts_at ? format(new Date(a.starts_at), 'MMM d, yyyy') : 'Now'} - {a.expires_at ? format(new Date(a.expires_at), 'MMM d, yyyy') : 'No expiry'}
+                            </p>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -1087,6 +1159,39 @@ export default function AdminDashboard() {
                       <CalendarCheck className="h-4 w-4" />
                     )}
                     Save Capacity Limit
+                  </Button>
+                  <div className="h-px bg-border/30 my-2" />
+                  <p className="text-sm font-semibold">Bulk date-range update</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="capRangeStart">Start Date</Label>
+                      <Input
+                        id="capRangeStart"
+                        type="date"
+                        value={capRangeStart}
+                        onChange={(e) => setCapRangeStart(e.target.value)}
+                        min={format(new Date(), 'yyyy-MM-dd')}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="capRangeEnd">End Date</Label>
+                      <Input
+                        id="capRangeEnd"
+                        type="date"
+                        value={capRangeEnd}
+                        onChange={(e) => setCapRangeEnd(e.target.value)}
+                        min={capRangeStart || format(new Date(), 'yyyy-MM-dd')}
+                      />
+                    </div>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    className="w-full gap-2"
+                    onClick={saveCapacityRange}
+                    disabled={capSaving || !capRangeStart || !capRangeEnd}
+                  >
+                    {capSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarCheck className="h-4 w-4" />}
+                    Apply to Date Range
                   </Button>
                 </CardContent>
               </Card>

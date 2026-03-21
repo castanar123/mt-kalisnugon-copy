@@ -3,9 +3,9 @@ import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Bell, Megaphone, CalendarCheck, AlertTriangle, CheckCheck } from 'lucide-react';
+import { Bell, Megaphone, CalendarCheck, AlertTriangle, CheckCheck, Trash2 } from 'lucide-react';
 import { loadAnnouncements } from '@/lib/announcements';
-import { loadSeenNotificationIds, saveSeenNotificationIds } from '@/lib/notifications';
+import { loadRemovedNotificationIds, loadSeenNotificationIds, markNotificationRemoved, saveSeenNotificationIds } from '@/lib/notifications';
 
 type AppNotification = {
   id: string;
@@ -19,12 +19,15 @@ export default function NotificationsPage() {
   const { user } = useAuth();
   const [items, setItems] = useState<AppNotification[]>([]);
   const [seen, setSeen] = useState<string[]>([]);
+  const [removed, setRemoved] = useState<string[]>([]);
 
   useEffect(() => {
     if (!user) return;
     setSeen(loadSeenNotificationIds(user.id));
+    setRemoved(loadRemovedNotificationIds(user.id));
 
     const loadAll = async () => {
+      const removedIds = new Set(loadRemovedNotificationIds(user.id));
       const anns = loadAnnouncements().map((a) => ({
         id: `ann:${a.id}`,
         title: a.title,
@@ -48,13 +51,20 @@ export default function NotificationsPage() {
         category: 'booking' as const,
       }));
 
-      setItems([...anns, ...bookingNotifs].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)));
+      setItems(
+        [...anns, ...bookingNotifs]
+          .filter((item) => !removedIds.has(item.id))
+          .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)),
+      );
     };
 
     void loadAll();
   }, [user]);
 
-  const unread = useMemo(() => items.filter((i) => !seen.includes(i.id)).length, [items, seen]);
+  const unread = useMemo(
+    () => items.filter((i) => !seen.includes(i.id) && !removed.includes(i.id)).length,
+    [items, seen, removed],
+  );
 
   const markAllSeen = () => {
     if (!user) return;
@@ -111,20 +121,37 @@ export default function NotificationsPage() {
                       </div>
                       <p className="text-sm text-muted-foreground">{n.body}</p>
                       <p className="text-xs text-muted-foreground/80 mt-2">{new Date(n.createdAt).toLocaleString()}</p>
-                      {isUnread && user && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="mt-2 h-7 px-2 text-xs"
-                          onClick={() => {
-                            const next = [...seen, n.id];
-                            setSeen(next);
-                            saveSeenNotificationIds(user.id, next);
-                          }}
-                        >
-                          Mark as seen
-                        </Button>
-                      )}
+                      <div className="mt-2 flex items-center gap-2">
+                        {isUnread && user && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => {
+                              const next = [...seen, n.id];
+                              setSeen(next);
+                              saveSeenNotificationIds(user.id, next);
+                            }}
+                          >
+                            Mark as seen
+                          </Button>
+                        )}
+                        {user && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                            onClick={() => {
+                              setItems((prev) => prev.filter((x) => x.id !== n.id));
+                              setRemoved((prev) => (prev.includes(n.id) ? prev : [...prev, n.id]));
+                              markNotificationRemoved(user.id, n.id);
+                            }}
+                          >
+                            <Trash2 className="h-3 w-3 mr-1" />
+                            Remove
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}

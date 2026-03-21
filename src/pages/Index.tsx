@@ -1,7 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Mountain, ArrowUpRight, Wind, Droplets, Trees, MapPin, Mail, Phone } from 'lucide-react';
+import { Mountain, ArrowUpRight, Wind, Trees, MapPin } from 'lucide-react';
 import { motion } from 'framer-motion';
 import heroImage from '@/assets/mt-kalisungan-hero.jpg';
 import logo from '@/assets/logo.png';
@@ -14,6 +14,7 @@ import { useAuth } from '@/hooks/useAuth';
 type LiveWeather = {
   temperature: number;
   windSpeed: number;
+  humidity: number;
   weatherLabel: string;
 };
 
@@ -28,7 +29,7 @@ function useLiveWeather(): { weather: LiveWeather | null; loading: boolean; erro
     const fetchWeather = async () => {
       try {
         const url =
-          'https://api.open-meteo.com/v1/forecast?latitude=14.1475&longitude=121.3454&current=temperature_2m,wind_speed_10m,weather_code';
+          'https://api.open-meteo.com/v1/forecast?latitude=14.1475&longitude=121.3454&current=temperature_2m,wind_speed_10m,relative_humidity_2m,weather_code';
         const resp = await fetch(url);
         if (!resp.ok) throw new Error(`Weather error ${resp.status}`);
         const data = await resp.json();
@@ -47,6 +48,7 @@ function useLiveWeather(): { weather: LiveWeather | null; loading: boolean; erro
         setWeather({
           temperature: data.current.temperature_2m,
           windSpeed: data.current.wind_speed_10m,
+          humidity: data.current.relative_humidity_2m,
           weatherLabel: label,
         });
         setError(null);
@@ -259,36 +261,10 @@ export default function Index() {
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
-                  <div className="inline-flex items-center gap-2 rounded-full bg-background/50 border border-border/40 px-3 py-1.5">
-                    <span className="font-semibold text-foreground">
-                      {loading && !weather && '—'}
-                      {!loading && weather && `${Math.round(weather.temperature)}°C`}
-                      {!loading && !weather && error && 'N/A'}
-                    </span>
-                    <span className="truncate max-w-[180px]">
-                      {weather?.weatherLabel ?? (loading ? 'Checking...' : error ?? 'No data')}
-                    </span>
-                  </div>
-                  <div className="inline-flex items-center gap-2 rounded-full bg-background/50 border border-border/40 px-3 py-1.5">
-                    <Wind className="h-3.5 w-3.5" />
-                    <span className="font-semibold text-foreground">{weather ? `${Math.round(weather.windSpeed)} km/h` : '—'}</span>
-                    <span>wind</span>
-                  </div>
-                </div>
-
                 <div className="grid grid-cols-3 gap-3 text-xs sm:text-sm">
                   <div className="rounded-xl bg-background/60 border border-border/40 px-3 py-2 flex flex-col justify-center">
                     <div className="flex items-center gap-1 text-muted-foreground text-[11px]">
-                      <Mountain className="h-3 w-3" /> Elevation
-                    </div>
-                    <div className="mt-1 text-lg font-semibold text-foreground leading-tight">622 m</div>
-                    <div className="text-[11px] text-muted-foreground">Summit height</div>
-                  </div>
-
-                  <div className="rounded-xl bg-background/60 border border-border/40 px-3 py-2 flex flex-col justify-center">
-                    <div className="flex items-center gap-1 text-muted-foreground text-[11px]">
-                      <Wind className="h-3 w-3" /> Weather
+                      <Mountain className="h-3 w-3" /> Temp
                     </div>
                     <div className="mt-1 text-lg font-semibold text-foreground leading-tight">
                       {loading && !weather && '—'}
@@ -302,28 +278,22 @@ export default function Index() {
 
                   <div className="rounded-xl bg-background/60 border border-border/40 px-3 py-2 flex flex-col justify-center">
                     <div className="flex items-center gap-1 text-muted-foreground text-[11px]">
-                      <Droplets className="h-3 w-3" /> Wind
+                      <Wind className="h-3 w-3" /> Wind
                     </div>
                     <div className="mt-1 text-lg font-semibold text-foreground leading-tight">
                       {weather ? `${Math.round(weather.windSpeed)} km/h` : '—'}
                     </div>
-                    <div className="text-[11px] text-muted-foreground">Ridge gusts</div>
+                    <div className="text-[11px] text-muted-foreground">Ridge level</div>
                   </div>
-                </div>
 
-                <div className="h-px bg-gradient-to-r from-transparent via-border/60 to-transparent my-1" />
-
-                <div className="flex flex-col sm:flex-row gap-3 text-[11px] sm:text-xs text-muted-foreground">
-                  <div className="flex-1">
-                    <div className="text-[11px] uppercase tracking-wide mb-1">Live summit window</div>
-                    <div>Best start between <span className="font-medium text-foreground">05:00–07:00</span> for cooler temps and summit views.</div>
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-[11px] uppercase tracking-wide mb-1">Safety snapshot</div>
-                    <div>
-                      Always register at the trailhead, bring <span className="font-medium">2L water</span>, and
-                      check ranger advisories in the app.
+                  <div className="rounded-xl bg-background/60 border border-border/40 px-3 py-2 flex flex-col justify-center">
+                    <div className="flex items-center gap-1 text-muted-foreground text-[11px]">
+                      <Wind className="h-3 w-3" /> Humidity
                     </div>
+                    <div className="mt-1 text-lg font-semibold text-foreground leading-tight">
+                      {weather ? `${Math.round(weather.humidity)}%` : '—'}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">Current moisture</div>
                   </div>
                 </div>
               </div>
@@ -346,6 +316,38 @@ export default function Index() {
             </div>
           </div>
         </motion.div>
+      </section>
+
+      <section id="learn-more" className="py-10 md:py-14 px-4 bg-background">
+        <div className="container max-w-5xl mx-auto">
+          <div className="text-center max-w-3xl mx-auto">
+            <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-primary/80 mb-3">
+              <span className="h-px w-7 bg-primary/50" />
+              About the Mountain
+              <span className="h-px w-7 bg-primary/50" />
+            </div>
+            <h2 className="text-3xl md:text-4xl font-bold mb-4 leading-tight">
+              About <span className="text-gradient">Mt. Kalisungan</span>
+            </h2>
+            <p className="text-base md:text-lg text-muted-foreground leading-relaxed">
+              Mt. Kalisungan rises in Calauan, Laguna and is also connected in local trail stories to nearby Lamot and
+              Nagcarlan routes. It is known today for sunrise treks, rolling ridgelines, and a welcoming local hiking
+              culture. Community accounts also mention wartime history in this mountain area during the final years of
+              World War II. If you want route tips, safety guidance, or planning help, you can know more anytime by
+              chatting with the in-app AI assistant.
+            </p>
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              <span className="px-3 py-1 rounded-full text-xs bg-primary/10 text-primary border border-primary/20">Calauan, Laguna</span>
+              <span className="px-3 py-1 rounded-full text-xs bg-secondary/60 text-foreground border border-border/40">Lamot - Nagcarlan routes</span>
+              <span className="px-3 py-1 rounded-full text-xs bg-secondary/60 text-foreground border border-border/40">Sunrise ridge treks</span>
+            </div>
+            <div className="mt-6 flex justify-center">
+              <Button asChild size="sm">
+                <Link to="/chat">Know More with AI Chat</Link>
+              </Button>
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* Divider: Hero → Gallery */}

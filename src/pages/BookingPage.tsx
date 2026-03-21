@@ -167,7 +167,9 @@ export default function BookingPage() {
   const [agreedRules, setAgreedRules] = useState(false);
   const [agreedPrivacy, setAgreedPrivacy] = useState(false);
   const [hasScrolledRulesToEnd, setHasScrolledRulesToEnd] = useState(false);
+  const [hasScrolledPrivacyToEnd, setHasScrolledPrivacyToEnd] = useState(false);
   const rulesRef = useRef<HTMLDivElement | null>(null);
+  const privacyRef = useRef<HTMLDivElement | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [booking, setBooking] = useState<SubmittedBooking | null>(null);
@@ -396,6 +398,7 @@ export default function BookingPage() {
     }
     if (step === 3) {
       if (!hasScrolledRulesToEnd) return 'Please read the full rules and scroll to the end before agreeing.';
+      if (!hasScrolledPrivacyToEnd) return 'Please read the full data privacy policy and scroll to the end before agreeing.';
       if (!agreedRules || !agreedPrivacy) return 'You must agree to all policies.';
     }
     return '';
@@ -516,6 +519,7 @@ export default function BookingPage() {
                 setAgreedRules(false);
                 setAgreedPrivacy(false);
                 setHasScrolledRulesToEnd(false);
+                setHasScrolledPrivacyToEnd(false);
               }}
             >
               Book Another Hike
@@ -528,7 +532,7 @@ export default function BookingPage() {
 
   /* ─────────────── BOOKING FORM ─────────────── */
   return (
-    <div className="min-h-screen pt-20 pb-12 px-4">
+    <div className="min-h-screen pt-20 pb-24 md:pb-12 px-4">
       <div className="container max-w-4xl mx-auto">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-10">
           <h1 className="text-3xl font-bold mb-2">
@@ -540,27 +544,28 @@ export default function BookingPage() {
         </motion.div>
 
         {/* ─── Step Indicator ─── */}
-        <div className="flex items-center justify-center mb-12 gap-0 overflow-x-auto pb-2 no-scrollbar">
+        <div className="mb-8 md:mb-12 pb-1">
+          <div className="grid grid-cols-4 items-start gap-1 sm:gap-2">
           {STEPS.map((s, i) => {
             const done = step > s.id;
             const active = step === s.id;
             const Icon = s.icon;
             return (
-              <div key={s.id} className="flex items-center">
-                <div className="flex flex-col items-center gap-2 px-3 sm:px-4">
+              <div key={s.id} className="flex flex-col items-center">
+                <div className="flex flex-col items-center gap-1.5 px-1">
                   <div
                     className={cn(
-                      'w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300',
+                      'w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all duration-300',
                       done ? 'bg-primary text-white' :
                       active ? 'bg-primary/20 border-2 border-primary text-primary' :
                       'bg-secondary/50 border-2 border-border/30 text-muted-foreground',
                     )}
                   >
-                    {done ? <Check className="h-5 w-5" /> : <Icon className="h-5 w-5" />}
+                    {done ? <Check className="h-4 w-4 sm:h-5 sm:w-5" /> : <Icon className="h-4 w-4 sm:h-5 sm:w-5" />}
                   </div>
                   <span
                     className={cn(
-                      'text-[10px] font-bold uppercase tracking-wider whitespace-nowrap',
+                      'text-[9px] sm:text-[10px] font-bold uppercase tracking-wide whitespace-nowrap',
                       active ? 'text-primary' : 'text-muted-foreground opacity-50',
                     )}
                   >
@@ -570,7 +575,7 @@ export default function BookingPage() {
                 {i < STEPS.length - 1 && (
                   <div
                     className={cn(
-                      'w-10 sm:w-14 h-[2px] mb-6 transition-colors duration-300',
+                      'w-full h-[2px] mt-2 transition-colors duration-300',
                       done ? 'bg-primary' : 'bg-border/30',
                     )}
                   />
@@ -578,6 +583,7 @@ export default function BookingPage() {
               </div>
             );
           })}
+          </div>
         </div>
 
         {/* ─── Step Content ─── */}
@@ -947,50 +953,72 @@ export default function BookingPage() {
                       }}
                       className="h-48 overflow-y-auto rounded-xl border border-border/20 bg-secondary/10 p-4 text-sm leading-relaxed"
                     >
-                      <p className="font-semibold mb-2">Trail Rules and Data Privacy Policy</p>
+                      <p className="font-semibold mb-2">Trail Rules and Regulations</p>
                       <p>1. Follow ranger instructions at all times during registration, ascent, and descent.</p>
                       <p>2. Stay on official trail routes and avoid restricted or dangerous areas.</p>
                       <p>3. Practice Leave No Trace: bring back all trash and do not damage flora and fauna.</p>
                       <p>4. Carry enough water, basic first-aid, and weather-appropriate gear.</p>
                       <p>5. Report medical concerns before the hike and inform rangers of emergencies immediately.</p>
                       <p>6. Respect local community guidelines at Barangay Lamot II and all checkpoints.</p>
-                      <p>7. Data Privacy: personal data is collected for booking verification, safety coordination, emergency response, and post-incident review.</p>
-                      <p>8. Data Privacy: your details may be accessed by authorized staff (admin/ranger) only for operations and safety.</p>
-                      <p>9. Data Privacy: companion details must be provided with their awareness and consent.</p>
-                      <p>10. You are responsible for providing accurate details for yourself and companions.</p>
+                      <p>7. You are responsible for providing accurate details for yourself and companions.</p>
                     </div>
                     {!hasScrolledRulesToEnd && (
                       <p className="text-xs text-amber-600 font-medium">Please scroll to the end of the rules to enable agreement.</p>
                     )}
                     <div className="space-y-4">
-                      <div className="flex items-start space-x-3 p-4 rounded-xl bg-secondary/20 border border-border/15">
-                        <Checkbox
-                          id="rules"
-                          checked={agreedRules}
-                          onCheckedChange={(v) => setAgreedRules(!!v)}
-                          disabled={!hasScrolledRulesToEnd}
-                          className="mt-1"
-                        />
-                        <Label htmlFor="rules" className="text-sm leading-relaxed cursor-pointer">
-                          I agree to follow the{' '}
-                          <span className="text-primary font-bold">Rules &amp; Regulations</span> of Mount
-                          Kalisungan, including the "Leave No Trace" policy.
-                        </Label>
-                      </div>
-                      <div className="flex items-start space-x-3 p-4 rounded-xl bg-secondary/20 border border-border/15">
-                        <Checkbox
-                          id="privacy"
-                          checked={agreedPrivacy}
-                          onCheckedChange={(v) => setAgreedPrivacy(!!v)}
-                          disabled={!hasScrolledRulesToEnd}
-                          className="mt-1"
-                        />
-                        <Label htmlFor="privacy" className="text-sm leading-relaxed cursor-pointer">
-                          I consent to the{' '}
-                          <span className="text-primary font-bold">Data Privacy Policy</span> regarding the
-                          collection of my personal and safety information.
-                        </Label>
-                      </div>
+                      {hasScrolledRulesToEnd && (
+                        <div className="flex items-start space-x-3 p-4 rounded-xl bg-secondary/20 border border-border/15">
+                          <Checkbox
+                            id="rules"
+                            checked={agreedRules}
+                            onCheckedChange={(v) => setAgreedRules(!!v)}
+                            className="mt-1"
+                          />
+                          <Label htmlFor="rules" className="text-sm leading-relaxed cursor-pointer">
+                            I agree to follow the{' '}
+                            <span className="text-primary font-bold">Rules &amp; Regulations</span> of Mount
+                            Kalisungan, including the "Leave No Trace" policy.
+                          </Label>
+                        </div>
+                      )}
+                      {agreedRules && (
+                        <>
+                          <div
+                            ref={privacyRef}
+                            onScroll={(e) => {
+                              const element = e.currentTarget;
+                              const reachedEnd = element.scrollTop + element.clientHeight >= element.scrollHeight - 8;
+                              if (reachedEnd) setHasScrolledPrivacyToEnd(true);
+                            }}
+                            className="h-40 overflow-y-auto rounded-xl border border-border/20 bg-secondary/10 p-4 text-sm leading-relaxed"
+                          >
+                            <p className="font-semibold mb-2">Data Privacy Policy</p>
+                            <p>1. Personal data is collected for booking verification, safety coordination, emergency response, and post-incident review.</p>
+                            <p>2. Your details may only be accessed by authorized personnel in relevant roles for operational and safety purposes.</p>
+                            <p>3. Companion details must be submitted with their awareness and consent.</p>
+                            <p>4. Data retention follows operational and legal needs, and records may be archived securely for incident tracing.</p>
+                            <p>5. By submitting this booking, you consent to storing and processing your data for mountain operation services.</p>
+                          </div>
+                          {!hasScrolledPrivacyToEnd && (
+                            <p className="text-xs text-amber-600 font-medium">Please scroll to the end of the data privacy policy to enable consent.</p>
+                          )}
+                          {hasScrolledPrivacyToEnd && (
+                            <div className="flex items-start space-x-3 p-4 rounded-xl bg-secondary/20 border border-border/15">
+                              <Checkbox
+                                id="privacy"
+                                checked={agreedPrivacy}
+                                onCheckedChange={(v) => setAgreedPrivacy(!!v)}
+                                className="mt-1"
+                              />
+                              <Label htmlFor="privacy" className="text-sm leading-relaxed cursor-pointer">
+                                I consent to the{' '}
+                                <span className="text-primary font-bold">Data Privacy Policy</span> regarding the
+                                collection of my personal and safety information.
+                              </Label>
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1034,7 +1062,7 @@ export default function BookingPage() {
           </AnimatePresence>
 
           {/* ─── Navigation Buttons ─── */}
-          <div className="flex justify-between items-center mt-6">
+          <div className="hidden md:flex justify-between items-center mt-6">
             <Button
               variant="ghost"
               onClick={() => setStep((s) => s - 1)}
@@ -1064,6 +1092,39 @@ export default function BookingPage() {
                 Confirm Reservation
               </Button>
             )}
+          </div>
+          <div className="md:hidden fixed bottom-3 left-3 right-3 z-30">
+            <div className="glass-card border border-border/30 rounded-2xl p-2 flex items-center justify-between gap-2">
+              <Button
+                variant="ghost"
+                onClick={() => setStep((s) => s - 1)}
+                disabled={step === 1 || loading}
+                className="gap-2 flex-1"
+              >
+                <ChevronLeft className="h-4 w-4" /> Previous
+              </Button>
+              {step < STEPS.length ? (
+                <Button
+                  onClick={next}
+                  className="gap-2 flex-1 h-11 text-sm font-bold"
+                >
+                  Continue <ChevronRight className="h-4 w-4" />
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleBook}
+                  disabled={loading}
+                  className="gap-2 flex-1 h-11 text-sm font-bold"
+                >
+                  {loading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Check className="h-4 w-4" />
+                  )}
+                  Confirm
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>
