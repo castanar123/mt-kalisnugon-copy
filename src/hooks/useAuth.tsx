@@ -36,6 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const syncSession = useCallback(async (session: { user: User } | null) => {
+    setLoading(true);
     setUser(session?.user ?? null);
 
     if (!session?.user) {
@@ -63,10 +64,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      void runSync(session as { user: User } | null);
-    });
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
       void runSync(session as { user: User } | null);
     });
 

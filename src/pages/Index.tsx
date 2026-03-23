@@ -7,6 +7,7 @@ import heroImage from '@/assets/mt-kalisungan-hero.jpg';
 import logo from '@/assets/logo.png';
 import TrailGallery from '@/components/landing/TrailGallery';
 import HikerReviews from '@/components/landing/HikerReviews';
+import GuideRatings from '@/components/landing/GuideRatings';
 import TrailOverview from '@/components/landing/TrailOverview';
 import ReservingGuide from '@/components/landing/ReservingGuide';
 import { useAuth } from '@/hooks/useAuth';
@@ -364,10 +365,16 @@ export default function Index() {
       {/* Reserving Guide */}
       <ReservingGuide />
 
-      {/* Divider: Guide → Reviews */}
+      {/* Divider: Guide → Guide Ratings */}
       <WaveDivider />
 
-      {/* Reviews */}
+      {/* Top 3 Guide Ratings */}
+      <GuideRatings />
+
+      {/* Divider: Guide Ratings → Hiker Reviews */}
+      <MountainDivider />
+
+      {/* Hiker Experience Reviews */}
       <HikerReviews />
 
       {/* CTA */}

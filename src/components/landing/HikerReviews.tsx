@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Quote } from 'lucide-react';
+import { Quote, Star } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
 interface Review {
@@ -148,9 +148,30 @@ export default function HikerReviews() {
             Real experiences from adventurers who conquered Mount Kalisungan.
           </p>
 
-          <div className="inline-flex items-center gap-2 px-6 py-3 rounded-full cinematic-card text-sm text-muted-foreground">
-            Showing {reviews.length} hiker stories
-          </div>
+          {/* Average rating display */}
+          {(() => {
+            const avg = reviews.length > 0
+              ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
+              : 0;
+            return (
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-4">
+                <div className="inline-flex items-center gap-3 px-6 py-3 rounded-full cinematic-card">
+                  <span className="text-2xl font-black text-amber-500">{avg.toFixed(1)}</span>
+                  <div className="flex flex-col items-start">
+                    <span className="flex gap-0.5">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <Star
+                          key={i}
+                          className={`h-4 w-4 ${i < Math.round(avg) ? 'fill-amber-400 text-amber-400' : 'text-border'}`}
+                        />
+                      ))}
+                    </span>
+                    <span className="text-xs text-muted-foreground">{reviews.length} hiking experience reviews</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </motion.div>
 
         {/* Review grid */}

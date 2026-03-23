@@ -1,6 +1,15 @@
 export type AppRole = 'admin' | 'ranger' | 'hiker' | 'guide';
 export type BookingStatus = 'pending' | 'confirmed' | 'cancelled' | 'adjustment_pending';
 
+/** Companion with full demographic details */
+export interface CompanionDetail {
+  name: string;
+  age?: string;
+  sex?: 'male' | 'female' | 'prefer_not_to_say';
+  nationality?: string;
+  city?: string; // PH city/municipality
+}
+
 /** Structured data stored as JSON in the bookings.notes field */
 export interface BookingMeta {
   userNotes?: string;
@@ -10,12 +19,40 @@ export interface BookingMeta {
   guidePhone?: string;
   fullName?: string;
   age?: string;
+  nationality?: string;
   emailAddress?: string;
   phoneNumber?: string;
   province?: string;
   city?: string;
   companions?: string[];
+  companionDetails?: CompanionDetail[]; // Rich companion info
   medicalNotes?: string;
+  // Hiker profile additions
+  sex?: 'male' | 'female' | 'prefer_not_to_say';
+  hasMinors?: boolean;
+  minorCount?: number;
+  preferredGuide?: string;
+  hikeType?: string;
+  hikeTime?: string;
+  // Payment screenshot (Firebase URL)
+  paymentScreenshotUrl?: string;
+  paymentScreenshotPath?: string; // Firebase storage path (for deletion)
+  // Payment tracking
+  paymentStatus?: 'unpaid' | 'partial' | 'paid';
+  paymentMethod?: 'onsite' | 'gcash' | 'bank_transfer';
+  amountPaid?: number;
+  transactionId?: string;
+  entryFee?: number;
+  guideFee?: number;
+  envFee?: number;
+  totalFee?: number;
+  actualGroupSize?: number;
+  refundAmount?: number;
+  refundReason?: string;
+  // Onsite check-in
+  onsiteStartConfirmed?: boolean;
+  onsiteStartTime?: string;
+  hikerSessionId?: string;
 }
 
 export interface Profile {

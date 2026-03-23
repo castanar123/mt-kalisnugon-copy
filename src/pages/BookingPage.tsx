@@ -24,7 +24,19 @@ import {
   Moon,
   Minus,
   Plus,
+  Baby,
+  CreditCard,
+  Smartphone,
+  Building2,
+  AlertTriangle,
+  Star,
+  Upload,
+  ImageIcon,
+  X,
+  Globe,
+  MapPin,
 } from 'lucide-react';
+import { calculateFees, formatPeso, GCASH_DETAILS, BANK_DETAILS } from '@/lib/payments';
 import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -35,6 +47,9 @@ import { CapacityCalendar, type DayCapacityMap } from '@/components/booking/Capa
 import BookingAIChat, { type GroupComposition } from '@/components/booking/BookingAIChat';
 import BookingInsightsPanel from '@/components/booking/BookingInsightsPanel';
 import { cn } from '@/lib/utils';
+import { getPHLocationOptions, COMMON_NATIONALITIES } from '@/lib/ph-locations';
+import { uploadPaymentScreenshot, isFirebaseConfigured } from '@/lib/firebase-storage';
+import type { CompanionDetail } from '@/types';
 
 /* ── Weather code → human-readable label (Open-Meteo) ── */
 function weatherCodeToLabel(code: number): string {
@@ -93,6 +108,10 @@ const STEPS = [
 
 const DEFAULT_MAX_CAPACITY = 100;
 
+type Sex = 'male' | 'female' | 'prefer_not_to_say';
+type PaymentOption = 'onsite' | 'online';
+type OnlinePayMethod = 'gcash' | 'bank_transfer';
+
 type SubmittedBooking = {
   booking_date: string;
   group_size: number;
@@ -106,7 +125,12 @@ type SubmittedBooking = {
   province: string;
   city: string;
   companions: string[];
-  medicalNotes: string;
+  medicalNotes?: string;
+  sex: Sex | '';
+  hasMinors: boolean;
+  preferredGuide: string;
+  paymentOption: PaymentOption;
+  totalFee: number;
 };
 
 /* ─── Helpers ─── */
@@ -156,12 +180,30 @@ export default function BookingPage() {
   // ── Step 2: Personal details
   const [fullName, setFullName] = useState('');
   const [age, setAge] = useState('');
+  const [sex, setSex] = useState<Sex | ''>('');
+  const [nationality, setNationality] = useState('Filipino');
   const [emailAddress, setEmailAddress] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [province, setProvince] = useState('');
   const [city, setCity] = useState('');
   const [companions, setCompanions] = useState<string[]>([]);
+  const [companionDetails, setCompanionDetails] = useState<CompanionDetail[]>([]);
   const [medicalNotes, setMedicalNotes] = useState('');
+  const [hasMinors, setHasMinors] = useState(false);
+  const [minorCount, setMinorCount] = useState(1);
+  const [preferredGuide, setPreferredGuide] = useState('');
+  const [locationSearch, setLocationSearch] = useState('');
+
+  // ── Step 4: Payment
+  const [paymentOption, setPaymentOption] = useState<PaymentOption>('onsite');
+  const [onlinePayMethod, setOnlinePayMethod] = useState<OnlinePayMethod>('gcash');
+  const [transactionRef, setTransactionRef] = useState('');
+  const [amountPaid, setAmountPaid] = useState('');
+  const [paymentScreenshot, setPaymentScreenshot] = useState<File | null>(null);
+  const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
+  const [screenshotUploading, setScreenshotUploading] = useState(false);
+
+  const phLocations = useMemo(() => getPHLocationOptions(), []);
 
   // ── Step 3: Agreement
   const [agreedRules, setAgreedRules] = useState(false);
@@ -253,7 +295,25 @@ export default function BookingPage() {
       }
       return prev.slice(0, neededCompanions);
     });
+    setCompanionDetails((prev) => {
+      if (prev.length === neededCompanions) return prev;
+      if (prev.length < neededCompanions) {
+        return [...prev, ...Array.from({ length: neededCompanions - prev.length }, () => ({ name: '' }))];
+      }
+      return prev.slice(0, neededCompanions);
+    });
   }, [groupSize]);
+
+  const updateCompanionDetail = useCallback((idx: number, field: keyof CompanionDetail, value: string) => {
+    setCompanionDetails((prev) =>
+      prev.map((c, i) => (i === idx ? { ...c, [field]: value } : c))
+    );
+    if (field === 'name') {
+      setCompanions((prev) =>
+        prev.map((item, index) => (index === idx ? value : item))
+      );
+    }
+  }, []);
 
   /* ── Derived slot count for selected date ── */
   const slotsForDate = useMemo(() => {
@@ -410,6 +470,18 @@ export default function BookingPage() {
     setStep((s) => s + 1);
   };
 
+  /* ── Screenshot handler ── */
+  const handleScreenshotChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast.error('Please upload an image file.'); return; }
+    if (file.size > 15 * 1024 * 1024) { toast.error('File too large. Max 15MB.'); return; }
+    setPaymentScreenshot(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => setScreenshotPreview(ev.target?.result as string);
+    reader.readAsDataURL(file);
+  };
+
   /* ── Submit ── */
   const handleBook = async () => {
     if (!user || !date) return;
@@ -417,16 +489,60 @@ export default function BookingPage() {
     setLoading(true);
     const qrData = `KALISUNGAN-${user.id.slice(0, 8)}-${dateStr}-${Date.now()}`;
     const companionNames = companions.map((name) => name.trim()).filter(Boolean);
+    const fees = calculateFees(groupSize);
+
+    // Upload screenshot to Firebase if present
+    let screenshotUrl: string | undefined;
+    let screenshotPath: string | undefined;
+    if (paymentScreenshot) {
+      setScreenshotUploading(true);
+      try {
+        const result = await uploadPaymentScreenshot(paymentScreenshot, `${user.id.slice(0, 8)}-${dateStr}`);
+        if (result) {
+          screenshotUrl = result.url;
+          screenshotPath = result.path;
+        } else {
+          toast.warning('Firebase not configured — screenshot not uploaded. Contact admin.');
+        }
+      } catch {
+        toast.error('Failed to upload screenshot. Booking will continue without it.');
+      }
+      setScreenshotUploading(false);
+    }
+
+    const enrichedCompanions = companionDetails.map((c, i) => ({
+      ...c,
+      name: c.name || companions[i] || '',
+    })).filter((c) => c.name.trim());
+
     const metaNotes = encodeMeta({
       userNotes: medicalNotes,
       fullName,
       age,
+      nationality,
       emailAddress,
       phoneNumber,
       province,
       city,
       companions: companionNames,
+      companionDetails: enrichedCompanions.length ? enrichedCompanions : undefined,
       medicalNotes,
+      sex: sex || undefined,
+      hasMinors,
+      minorCount: hasMinors ? minorCount : undefined,
+      preferredGuide: preferredGuide.trim() || undefined,
+      hikeType,
+      hikeTime,
+      paymentStatus: paymentOption === 'online' && (transactionRef || screenshotUrl) ? 'partial' : 'unpaid',
+      paymentMethod: paymentOption === 'online' ? onlinePayMethod : 'onsite',
+      transactionId: transactionRef.trim() || undefined,
+      amountPaid: amountPaid ? Number(amountPaid) : undefined,
+      paymentScreenshotUrl: screenshotUrl,
+      paymentScreenshotPath: screenshotPath,
+      entryFee: fees.entryFee,
+      envFee: fees.envFee,
+      guideFee: fees.guideFee,
+      totalFee: fees.totalFee,
     });
 
     const { data, error } = await supabase
@@ -447,7 +563,24 @@ export default function BookingPage() {
     if (error) {
       toast.error(error.message);
     } else {
-      setBooking({ ...data, hikeTime, hikeType, fullName, age, emailAddress, phoneNumber, province, city, companions: companionNames });
+      const fees = calculateFees(groupSize);
+      setBooking({
+        ...data,
+        hikeTime,
+        hikeType,
+        fullName,
+        age,
+        emailAddress,
+        phoneNumber,
+        province,
+        city,
+        companions: companionNames,
+        sex,
+        hasMinors,
+        preferredGuide,
+        paymentOption,
+        totalFee: fees.totalFee,
+      });
       toast.success('Booking submitted! Awaiting admin approval.');
       confirmReservation({
         id: data.id.toString(),
@@ -844,6 +977,30 @@ export default function BookingPage() {
                           placeholder="e.g. 24"
                         />
                       </div>
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label>Sex</Label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {([
+                            { value: 'male',              label: 'Male' },
+                            { value: 'female',            label: 'Female' },
+                            { value: 'prefer_not_to_say', label: 'Prefer not to say' },
+                          ] as { value: Sex; label: string }[]).map(({ value, label }) => (
+                            <button
+                              key={value}
+                              type="button"
+                              onClick={() => setSex(value)}
+                              className={cn(
+                                'py-2 rounded-xl border-2 text-xs font-semibold transition-all',
+                                sex === value
+                                  ? 'border-primary bg-primary/10 text-primary'
+                                  : 'border-border/30 text-muted-foreground hover:border-primary/30',
+                              )}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       <div className="space-y-2">
                         <Label htmlFor="emailAddress">Email Address</Label>
                         <Input
@@ -863,27 +1020,71 @@ export default function BookingPage() {
                           placeholder="09XXXXXXXXX"
                         />
                       </div>
+                      {/* Nationality */}
                       <div className="space-y-2">
-                        <Label htmlFor="province">Province (Optional)</Label>
-                        <Input
-                          id="province"
-                          value={province}
-                          onChange={(e) => setProvince(e.target.value)}
-                          placeholder="Laguna"
-                        />
+                        <Label htmlFor="nationality" className="flex items-center gap-1.5">
+                          <Globe className="h-3.5 w-3.5 text-muted-foreground" /> Nationality
+                        </Label>
+                        <select
+                          id="nationality"
+                          value={nationality}
+                          onChange={(e) => setNationality(e.target.value)}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        >
+                          {COMMON_NATIONALITIES.map((n) => (
+                            <option key={n} value={n}>{n}</option>
+                          ))}
+                        </select>
                       </div>
+
+                      {/* PH Location (city/municipality dropdown) */}
                       <div className="space-y-2">
-                        <Label htmlFor="city">City (Optional)</Label>
-                        <Input
-                          id="city"
-                          value={city}
-                          onChange={(e) => setCity(e.target.value)}
-                          placeholder="Calauan"
-                        />
+                        <Label className="flex items-center gap-1.5">
+                          <MapPin className="h-3.5 w-3.5 text-muted-foreground" /> City / Municipality
+                        </Label>
+                        <div className="relative">
+                          <Input
+                            placeholder="Search PH city or municipality…"
+                            value={locationSearch}
+                            onChange={(e) => {
+                              setLocationSearch(e.target.value);
+                              if (!e.target.value) { setCity(''); setProvince(''); }
+                            }}
+                            className="text-sm"
+                          />
+                          {locationSearch && (
+                            <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-52 overflow-y-auto rounded-xl border border-border/40 bg-card shadow-xl">
+                              {phLocations
+                                .filter((loc) => loc.toLowerCase().includes(locationSearch.toLowerCase()))
+                                .slice(0, 20)
+                                .map((loc) => (
+                                  <button
+                                    key={loc}
+                                    type="button"
+                                    className="w-full text-left px-3 py-2 text-sm hover:bg-primary/10 hover:text-primary transition-colors"
+                                    onClick={() => {
+                                      const [locCity, locProv] = loc.split(', ');
+                                      setCity(locCity);
+                                      setProvince(locProv || '');
+                                      setLocationSearch(loc);
+                                    }}
+                                  >
+                                    {loc}
+                                  </button>
+                                ))}
+                              {phLocations.filter((loc) => loc.toLowerCase().includes(locationSearch.toLowerCase())).length === 0 && (
+                                <div className="px-3 py-2 text-xs text-muted-foreground">No matches. You can type it manually.</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        {city && <p className="text-xs text-primary font-medium">Selected: {city}{province ? `, ${province}` : ''}</p>}
                       </div>
-                      <div className="space-y-2 sm:col-span-2">
+
+                      {/* Companions with full details */}
+                      <div className="space-y-3 sm:col-span-2">
                         <div className="flex items-center justify-between">
-                          <Label>Companion Full Names ({Math.max(0, groupSize - 1)})</Label>
+                          <Label>Companions ({Math.max(0, groupSize - 1)})</Label>
                           <Button
                             type="button"
                             size="sm"
@@ -893,35 +1094,85 @@ export default function BookingPage() {
                             + Add Companion
                           </Button>
                         </div>
-                        <div className="space-y-2">
-                          {companions.length === 0 && (
-                            <p className="text-xs text-muted-foreground">
-                              No companions yet. Increase group size to add companion full names.
-                            </p>
-                          )}
-                          {companions.map((companion, idx) => (
-                            <div key={`companion-${idx}`} className="flex items-center gap-2">
-                              <Input
-                                value={companion}
-                                onChange={(e) => {
-                                  const value = e.target.value;
-                                  setCompanions((prev) =>
-                                    prev.map((item, index) => (index === idx ? value : item)),
-                                  );
-                                }}
-                                placeholder={`Companion ${idx + 1} full name (e.g. Maria Santos)`}
-                              />
-                              {companions.length > 1 && (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  onClick={() => setGroupSize((s) => Math.max(1, s - 1))}
-                                >
-                                  Remove
-                                </Button>
-                              )}
-                            </div>
-                          ))}
+                        {companions.length === 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            No companions yet. Increase group size to add companions.
+                          </p>
+                        )}
+                        <div className="space-y-4">
+                          {companions.map((_, idx) => {
+                            const cd = companionDetails[idx] || {};
+                            return (
+                              <div key={`companion-${idx}`} className="rounded-xl border border-border/30 bg-secondary/10 p-4 space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Companion {idx + 1}</p>
+                                  {companions.length > 0 && (
+                                    <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive h-7 px-2 text-xs"
+                                      onClick={() => setGroupSize((s) => Math.max(1, s - 1))}>
+                                      Remove
+                                    </Button>
+                                  )}
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  <div className="space-y-1.5 sm:col-span-2">
+                                    <Label className="text-xs">Full Name *</Label>
+                                    <Input
+                                      value={cd.name || ''}
+                                      onChange={(e) => updateCompanionDetail(idx, 'name', e.target.value)}
+                                      placeholder="e.g. Maria Santos"
+                                    />
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <Label className="text-xs">Age</Label>
+                                    <Input
+                                      type="number"
+                                      min={1}
+                                      max={120}
+                                      value={cd.age || ''}
+                                      onChange={(e) => updateCompanionDetail(idx, 'age', e.target.value)}
+                                      placeholder="e.g. 25"
+                                    />
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <Label className="text-xs">Sex</Label>
+                                    <div className="grid grid-cols-3 gap-1.5">
+                                      {(['male', 'female', 'prefer_not_to_say'] as const).map((sv) => (
+                                        <button key={sv} type="button"
+                                          onClick={() => updateCompanionDetail(idx, 'sex', sv)}
+                                          className={cn(
+                                            'py-1.5 rounded-lg border text-[10px] font-semibold transition-all',
+                                            cd.sex === sv ? 'border-primary bg-primary/10 text-primary' : 'border-border/30 text-muted-foreground hover:border-primary/30',
+                                          )}
+                                        >
+                                          {sv === 'male' ? 'Male' : sv === 'female' ? 'Female' : 'N/A'}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <Label className="text-xs">Nationality</Label>
+                                    <select
+                                      value={cd.nationality || 'Filipino'}
+                                      onChange={(e) => updateCompanionDetail(idx, 'nationality', e.target.value)}
+                                      className="flex h-9 w-full rounded-md border border-input bg-background px-2 py-1 text-xs ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                    >
+                                      {COMMON_NATIONALITIES.map((n) => (
+                                        <option key={n} value={n}>{n}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <Label className="text-xs">City / Municipality</Label>
+                                    <Input
+                                      value={cd.city || ''}
+                                      onChange={(e) => updateCompanionDetail(idx, 'city', e.target.value)}
+                                      placeholder="e.g. Calauan, Laguna"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                       <div className="space-y-2 sm:col-span-2">
@@ -932,6 +1183,84 @@ export default function BookingPage() {
                           onChange={(e) => setMedicalNotes(e.target.value)}
                           placeholder="Allergies, medical history, or reminders for rangers"
                         />
+                      </div>
+
+                      {/* Minors checklist */}
+                      <div className="space-y-3 sm:col-span-2">
+                        <button
+                          type="button"
+                          onClick={() => setHasMinors((v) => !v)}
+                          className={cn(
+                            'w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-all',
+                            hasMinors
+                              ? 'border-amber-400/60 bg-amber-500/5 text-amber-700 dark:text-amber-300'
+                              : 'border-border/30 text-muted-foreground hover:border-amber-400/30',
+                          )}
+                        >
+                          <Baby className={cn('h-5 w-5 flex-shrink-0', hasMinors ? 'text-amber-500' : 'text-muted-foreground')} />
+                          <div className="flex-1">
+                            <p className="text-sm font-semibold">Are minors (below 18 yrs) included in your group?</p>
+                            <p className="text-xs opacity-70">Tap to toggle — additional requirements apply</p>
+                          </div>
+                          <div className={cn('w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0', hasMinors ? 'border-amber-500 bg-amber-500' : 'border-border/50')}>
+                            {hasMinors && <Check className="h-3 w-3 text-white" />}
+                          </div>
+                        </button>
+
+                        {hasMinors && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="space-y-3"
+                          >
+                            <div className="flex items-center gap-3 p-3 rounded-xl border border-border/20 bg-secondary/20">
+                              <Label htmlFor="minorCount" className="text-sm flex-shrink-0">Number of minors:</Label>
+                              <div className="flex items-center gap-2">
+                                <button type="button" onClick={() => setMinorCount((c) => Math.max(1, c - 1))} className="w-7 h-7 rounded-full border border-border/50 flex items-center justify-center hover:bg-primary/10 transition-all">
+                                  <Minus className="h-3 w-3" />
+                                </button>
+                                <span className="w-6 text-center font-bold">{minorCount}</span>
+                                <button type="button" onClick={() => setMinorCount((c) => Math.min(groupSize - 1, c + 1))} className="w-7 h-7 rounded-full border border-border/50 flex items-center justify-center hover:bg-primary/10 transition-all">
+                                  <Plus className="h-3 w-3" />
+                                </button>
+                              </div>
+                            </div>
+                            <div className="rounded-xl border border-amber-400/40 bg-amber-500/5 p-4 space-y-2.5">
+                              <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300 font-semibold text-sm">
+                                <AlertTriangle className="h-4 w-4" />
+                                Required Documents for Minors (bring onsite)
+                              </div>
+                              {[
+                                'Original signed Parental/Guardian Consent Letter',
+                                'Photocopy of parent or guardian\'s valid government-issued ID',
+                                'Photocopy of the minor\'s PSA Birth Certificate',
+                                'Emergency contact number of parent/guardian in booking details',
+                                'Minor must be accompanied by a responsible adult at all times',
+                              ].map((item, i) => (
+                                <div key={i} className="flex items-start gap-2 text-xs text-amber-800 dark:text-amber-200">
+                                  <Check className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-amber-500" />
+                                  <span>{item}</span>
+                                </div>
+                              ))}
+                              <p className="text-[11px] text-amber-700/80 dark:text-amber-300/80 pt-1 border-t border-amber-400/20 mt-2">
+                                ⚠️ If a parent or guardian is NOT present onsite, the minor MUST carry a notarized parental consent letter and a photocopy of the parent's valid ID. Entry will be denied without these documents.
+                              </p>
+                            </div>
+                          </motion.div>
+                        )}
+                      </div>
+
+                      {/* Preferred Guide */}
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label htmlFor="preferredGuide">Preferred Guide <span className="text-muted-foreground font-normal">(Optional)</span></Label>
+                        <Input
+                          id="preferredGuide"
+                          value={preferredGuide}
+                          onChange={(e) => setPreferredGuide(e.target.value)}
+                          placeholder="Enter guide name if you have a preference, or leave blank"
+                        />
+                        <p className="text-xs text-muted-foreground">A licensed local guide will be assigned by admin. You may request a preference, but assignment is subject to availability.</p>
                       </div>
                     </div>
                   </div>
@@ -961,6 +1290,10 @@ export default function BookingPage() {
                       <p>5. Report medical concerns before the hike and inform rangers of emergencies immediately.</p>
                       <p>6. Respect local community guidelines at Barangay Lamot II and all checkpoints.</p>
                       <p>7. You are responsible for providing accurate details for yourself and companions.</p>
+                      <p className="mt-3 font-semibold text-destructive">8. LIABILITY WAIVER — IMPORTANT</p>
+                      <p>By booking and participating in this activity, the hiker fully acknowledges that hiking involves inherent risks including but not limited to: physical injury, accidents, loss or damage of property, and adverse weather conditions. <strong>The Mt. Kalisungan community, the Local Government Unit (LGU) of Calauan, Barangay Lamot II, the Barangay Council, and any affiliated organization, corporation, or association are NOT liable and shall bear NO responsibility</strong> for any injury, accident, illness, death, loss of personal belongings, or damage to property occurring before, during, or after the hiking activity. ALL LIABILITY rests solely with the hiker and their group. Participation is entirely at the hiker's own risk.</p>
+                      <p>9. For minors, the parent or guardian assumes full liability and responsibility. Failure to present required parental consent documents will result in denial of entry.</p>
+                      <p>10. Payment of fees does not constitute insurance coverage. Hikers are strongly advised to secure their own personal accident and travel insurance.</p>
                     </div>
                     {!hasScrolledRulesToEnd && (
                       <p className="text-xs text-amber-600 font-medium">Please scroll to the end of the rules to enable agreement.</p>
@@ -1024,7 +1357,9 @@ export default function BookingPage() {
                 )}
 
                 {/* ═══════════════ STEP 4: CONFIRM ═══════════════ */}
-                {step === 4 && (
+                {step === 4 && (() => {
+                  const { entryFee, envFee, guideFee, totalFee } = calculateFees(groupSize);
+                  return (
                   <div className="space-y-6">
                     <div className="text-center mb-6">
                       <h2 className="text-xl font-bold">Confirm Booking</h2>
@@ -1038,25 +1373,178 @@ export default function BookingPage() {
                         { label: 'Group Size', value: `${groupSize} Pax` },
                         { label: 'Full Name', value: fullName },
                         { label: 'Age', value: age },
+                        { label: 'Sex', value: sex === 'male' ? 'Male' : sex === 'female' ? 'Female' : sex === 'prefer_not_to_say' ? 'Prefer not to say' : 'Not specified' },
+                        { label: 'Minors in Group', value: hasMinors ? `Yes (${minorCount})` : 'No' },
                         { label: 'Email', value: emailAddress },
                         { label: 'Address', value: [city, province].filter(Boolean).join(', ') || 'Not provided' },
                         { label: 'Companions', value: companions.map((name) => name.trim()).filter(Boolean).join(', ') || 'None listed' },
+                        { label: 'Preferred Guide', value: preferredGuide.trim() || 'No preference' },
                       ].map(({ label, value }) => (
-                        <div
-                          key={label}
-                          className="flex justify-between items-center py-2 border-b border-border/10 last:border-0"
-                        >
-                          <span className="text-xs text-muted-foreground font-bold uppercase tracking-wider">
-                            {label}
-                          </span>
-                          <span className="font-bold text-primary text-sm text-right max-w-[55%] truncate">
-                            {value}
-                          </span>
+                        <div key={label} className="flex justify-between items-center py-2 border-b border-border/10 last:border-0">
+                          <span className="text-xs text-muted-foreground font-bold uppercase tracking-wider">{label}</span>
+                          <span className="font-bold text-primary text-sm text-right max-w-[55%] truncate">{value}</span>
                         </div>
                       ))}
                     </div>
+
+                    {/* ── Payment Section ── */}
+                    <div className="space-y-4 p-5 rounded-2xl border border-border/20 bg-secondary/10">
+                      <h3 className="font-semibold flex items-center gap-2 text-base">
+                        <CreditCard className="h-4 w-4 text-primary" /> Payment Summary
+                      </h3>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Entry Fee (₱{50} × {groupSize} pax)</span>
+                          <span className="font-semibold">{formatPeso(entryFee)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Environmental/DSPA Fee (₱{20} × {groupSize} pax)</span>
+                          <span className="font-semibold">{formatPeso(envFee)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Guide Fee (per group)</span>
+                          <span className="font-semibold">{formatPeso(guideFee)}</span>
+                        </div>
+                        <div className="flex justify-between pt-2 border-t border-border/20 text-base font-bold">
+                          <span>Total</span>
+                          <span className="text-primary">{formatPeso(totalFee)}</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Payment Option</Label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {([
+                            { value: 'onsite' as PaymentOption, label: 'Pay Onsite', desc: 'Pay at trailhead on your hike date' },
+                            { value: 'online' as PaymentOption, label: 'Pay Online', desc: 'Optional advance payment' },
+                          ]).map(({ value, label, desc }) => (
+                            <button
+                              key={value}
+                              type="button"
+                              onClick={() => setPaymentOption(value)}
+                              className={cn(
+                                'flex flex-col items-center py-3 px-2 rounded-xl border-2 text-xs font-semibold transition-all',
+                                paymentOption === value
+                                  ? 'border-primary bg-primary/10 text-primary'
+                                  : 'border-border/30 text-muted-foreground hover:border-primary/30',
+                              )}
+                            >
+                              <span>{label}</span>
+                              <span className="text-[10px] font-normal mt-0.5 opacity-70">{desc}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {paymentOption === 'online' && (
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+                          <div className="grid grid-cols-2 gap-2">
+                            {([
+                              { value: 'gcash' as OnlinePayMethod, Icon: Smartphone, label: 'GCash' },
+                              { value: 'bank_transfer' as OnlinePayMethod, Icon: Building2, label: 'Bank Transfer' },
+                            ]).map(({ value, Icon, label }) => (
+                              <button
+                                key={value}
+                                type="button"
+                                onClick={() => setOnlinePayMethod(value)}
+                                className={cn(
+                                  'flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 text-xs font-semibold transition-all',
+                                  onlinePayMethod === value
+                                    ? 'border-primary bg-primary/10 text-primary'
+                                    : 'border-border/30 text-muted-foreground hover:border-primary/30',
+                                )}
+                              >
+                                <Icon className="h-4 w-4" /> {label}
+                              </button>
+                            ))}
+                          </div>
+
+                          <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm space-y-1">
+                            {onlinePayMethod === 'gcash' ? (
+                              <>
+                                <p className="font-semibold text-primary mb-2">GCash Payment Details</p>
+                                <p>Number: <strong>{GCASH_DETAILS.number}</strong></p>
+                                <p>Name: <strong>{GCASH_DETAILS.name}</strong></p>
+                              </>
+                            ) : (
+                              <>
+                                <p className="font-semibold text-primary mb-2">Bank Transfer Details</p>
+                                <p>Bank: <strong>{BANK_DETAILS.bank}</strong></p>
+                                <p>Account No.: <strong>{BANK_DETAILS.accountNo}</strong></p>
+                                <p>Account Name: <strong>{BANK_DETAILS.accountName}</strong></p>
+                              </>
+                            )}
+                            <p className="text-xs text-muted-foreground pt-1">Amount: <strong>{formatPeso(totalFee)}</strong> — use your booking name as reference.</p>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="space-y-2">
+                              <Label htmlFor="transactionRef" className="text-xs">Transaction Reference No.</Label>
+                              <Input
+                                id="transactionRef"
+                                value={transactionRef}
+                                onChange={(e) => setTransactionRef(e.target.value)}
+                                placeholder={onlinePayMethod === 'gcash' ? 'GCash ref no.' : 'Bank transaction no.'}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="amountPaid" className="text-xs">Amount Paid (₱)</Label>
+                              <Input
+                                id="amountPaid"
+                                type="number"
+                                value={amountPaid}
+                                onChange={(e) => setAmountPaid(e.target.value)}
+                                placeholder={String(totalFee)}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Payment screenshot upload */}
+                          <div className="space-y-2">
+                            <Label className="text-xs flex items-center gap-1.5">
+                              <ImageIcon className="h-3.5 w-3.5" /> Payment Screenshot
+                              {isFirebaseConfigured() ? (
+                                <span className="text-[10px] font-normal text-muted-foreground">(saved to secure storage, compressed)</span>
+                              ) : (
+                                <span className="text-[10px] font-normal text-amber-500">(Firebase not configured — admin will request manually)</span>
+                              )}
+                            </Label>
+                            {screenshotPreview ? (
+                              <div className="relative inline-block">
+                                <img src={screenshotPreview} alt="Payment screenshot" className="max-h-36 rounded-xl border border-border/30 object-cover" />
+                                <button
+                                  type="button"
+                                  onClick={() => { setPaymentScreenshot(null); setScreenshotPreview(null); }}
+                                  className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-destructive text-white flex items-center justify-center"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </div>
+                            ) : (
+                              <label className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed border-border/40 hover:border-primary/40 cursor-pointer transition-colors bg-secondary/10">
+                                <Upload className="h-5 w-5 text-muted-foreground" />
+                                <span className="text-xs text-muted-foreground">Click to upload screenshot</span>
+                                <input type="file" accept="image/*" className="sr-only" onChange={handleScreenshotChange} />
+                              </label>
+                            )}
+                          </div>
+
+                          <p className="text-xs text-muted-foreground">
+                            Online payment is optional — you may pay remaining balance onsite. Proof of payment may be required at check-in.
+                          </p>
+                        </motion.div>
+                      )}
+
+                      {paymentOption === 'onsite' && (
+                        <div className="flex items-start gap-2 p-3 rounded-xl bg-secondary/30 text-xs text-muted-foreground">
+                          <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-primary" />
+                          <span>You chose to pay onsite. Please prepare {formatPeso(totalFee)} in cash at the trailhead on your booking date.</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )}
+                  );
+                })()}
               </Card>
             </motion.div>
           </AnimatePresence>
@@ -1081,15 +1569,15 @@ export default function BookingPage() {
             ) : (
               <Button
                 onClick={handleBook}
-                disabled={loading}
+                disabled={loading || screenshotUploading}
                 className="gap-2 px-8 h-12 text-base font-bold shadow-lg shadow-primary/20"
               >
-                {loading ? (
+                {loading || screenshotUploading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Check className="h-4 w-4" />
                 )}
-                Confirm Reservation
+                {screenshotUploading ? 'Uploading…' : 'Confirm Reservation'}
               </Button>
             )}
           </div>
@@ -1113,15 +1601,15 @@ export default function BookingPage() {
               ) : (
                 <Button
                   onClick={handleBook}
-                  disabled={loading}
+                  disabled={loading || screenshotUploading}
                   className="gap-2 flex-1 h-11 text-sm font-bold"
                 >
-                  {loading ? (
+                  {loading || screenshotUploading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <Check className="h-4 w-4" />
                   )}
-                  Confirm
+                  {screenshotUploading ? 'Uploading…' : 'Confirm'}
                 </Button>
               )}
             </div>

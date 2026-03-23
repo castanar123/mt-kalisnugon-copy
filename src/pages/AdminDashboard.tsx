@@ -46,9 +46,19 @@ import {
   CalendarClock,
   XCircle,
   SlidersHorizontal,
+  QrCode,
+  ScanLine,
+  CreditCard,
+  Receipt,
+  RefreshCw,
+  Baby,
+  BarChart2,
+  ExternalLink,
 } from 'lucide-react';
 import { parseMeta, encodeMeta } from '@/lib/bookingMeta';
+import { calculateFees, formatPeso, PAYMENT_METHOD_LABELS, type PaymentMethod } from '@/lib/payments';
 import { addAnnouncement, loadAnnouncements, removeAnnouncement, type AdminAnnouncement } from '@/lib/announcements';
+import { writeActivityLog } from '@/lib/activity-log';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import {
@@ -64,6 +74,9 @@ import {
   Cell,
 } from 'recharts';
 import TrailRecorder from '@/components/map/TrailRecorder';
+import QRCameraScanner from '@/components/admin/QRCameraScanner';
+import DemographicsTab from '@/components/admin/DemographicsTab';
+import PaymentSummaryTab from '@/components/admin/PaymentSummaryTab';
 import { format } from 'date-fns';
 
 const COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#a855f7'];
@@ -111,6 +124,22 @@ export default function AdminDashboard() {
   const [pendingBookings, setPendingBookings] = useState<any[]>([]);
   const [pendingLoading, setPendingLoading] = useState(false);
 
+  /* ── QR Scan / Onsite Check-in state ── */
+  const [qrInput, setQrInput] = useState('');
+  const [scannedBooking, setScannedBooking] = useState<any | null>(null);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [startingHike, setStartingHike] = useState(false);
+  const [hikeStarted, setHikeStarted] = useState(false);
+
+  /* ── Payment tracking state ── */
+  const [allBookings, setAllBookings] = useState<any[]>([]);
+  const [payBookingId, setPayBookingId] = useState<string | null>(null);
+  const [payAmount, setPayAmount] = useState('');
+  const [payMethod, setPayMethod] = useState<PaymentMethod>('onsite');
+  const [payTransactionId, setPayTransactionId] = useState('');
+  const [actualGroupSize, setActualGroupSize] = useState('');
+  const [paySaving, setPaySaving] = useState(false);
+
   /* ── Capacity Management state ── */
   const [capDate, setCapDate] = useState('');
   const [capMax, setCapMax] = useState(100);
@@ -134,8 +163,143 @@ export default function AdminDashboard() {
     loadData();
     loadPendingBookings();
     loadUpcomingCapacities();
+    loadAllBookings();
     setAnnouncements(loadAnnouncements());
   }, []);
+
+  /* ── Load all bookings for payment tab ── */
+  const loadAllBookings = async () => {
+    const { data } = await supabase
+      .from('bookings')
+      .select('*')
+      .in('status', ['confirmed', 'pending'])
+      .order('created_at', { ascending: false })
+      .limit(50);
+    setAllBookings(data || []);
+  };
+
+  /* ── QR Scan: lookup booking by QR code, ID, or name ── */
+  const handleQrLookup = async () => {
+    const q = qrInput.trim();
+    if (!q) { toast.error('Enter QR code data, booking ID, or hiker name.'); return; }
+    setScanLoading(true);
+    setScannedBooking(null);
+    setHikeStarted(false);
+
+    // Try exact QR/ID match first
+    const { data: exactData } = await supabase
+      .from('bookings')
+      .select('*')
+      .or(`qr_code_data.eq.${q},id.eq.${q}`)
+      .limit(1)
+      .maybeSingle();
+
+    if (exactData) {
+      setScannedBooking(exactData);
+      setScanLoading(false);
+      return;
+    }
+
+    // Fallback: search by name in emergency_contact_name or notes JSON
+    const { data: nameData } = await supabase
+      .from('bookings')
+      .select('*')
+      .ilike('emergency_contact_name', `%${q}%`)
+      .not('status', 'eq', 'cancelled')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (nameData) {
+      setScannedBooking(nameData);
+      toast.info(`Found booking by name match.`);
+    } else {
+      toast.error('No booking found. Try the QR code, booking ID, or hiker name.');
+    }
+    setScanLoading(false);
+  };
+
+  /* ── QR Scan: start hike ── */
+  const handleStartHike = async () => {
+    if (!scannedBooking) return;
+    setStartingHike(true);
+    const { data: session, error: sessionErr } = await supabase
+      .from('hiker_sessions')
+      .insert({
+        user_id: scannedBooking.user_id,
+        booking_id: scannedBooking.id,
+        start_time: new Date().toISOString(),
+        status: 'active',
+        total_distance_km: 0,
+      })
+      .select()
+      .single();
+
+    if (sessionErr) {
+      toast.error('Failed to start hike: ' + sessionErr.message);
+    } else {
+      const meta = parseMeta(scannedBooking.notes);
+      const updatedNotes = encodeMeta({ ...meta, onsiteStartConfirmed: true, onsiteStartTime: new Date().toISOString(), hikerSessionId: session?.id });
+      await supabase.from('bookings').update({ notes: updatedNotes }).eq('id', scannedBooking.id);
+      toast.success(`✅ Hike started for ${meta.fullName || 'hiker'}! Session is now active.`);
+      setHikeStarted(true);
+      setScannedBooking({ ...scannedBooking, notes: updatedNotes });
+    }
+    setStartingHike(false);
+  };
+
+  /* ── Payment: record payment ── */
+  const handleRecordPayment = async () => {
+    if (!payBookingId || !payAmount) { toast.error('Enter amount paid.'); return; }
+    setPaySaving(true);
+    const booking = allBookings.find((b) => b.id === payBookingId);
+    const meta = parseMeta(booking?.notes);
+    const { entryFee, envFee, guideFee, totalFee } = calculateFees(booking?.group_size || 1);
+    const actualSize = actualGroupSize ? parseInt(actualGroupSize) : booking?.group_size || 1;
+    const actualFees = calculateFees(actualSize);
+    const paid = Number(payAmount);
+    const refundAmount = paid > actualFees.totalFee ? paid - actualFees.totalFee : 0;
+    const paymentStatus = paid >= actualFees.totalFee ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
+
+    const updatedMeta = encodeMeta({
+      ...meta,
+      paymentStatus,
+      paymentMethod: payMethod,
+      amountPaid: paid,
+      transactionId: payTransactionId.trim() || undefined,
+      entryFee,
+      envFee,
+      guideFee,
+      totalFee: actualFees.totalFee,
+      actualGroupSize: actualSize !== booking?.group_size ? actualSize : undefined,
+      refundAmount: refundAmount > 0 ? refundAmount : undefined,
+      refundReason: refundAmount > 0 ? `Group reduced from ${booking?.group_size} to ${actualSize} pax` : undefined,
+    });
+
+    const updateData: any = { notes: updatedMeta };
+    if (actualSize !== booking?.group_size) updateData.group_size = actualSize;
+
+    const { error } = await supabase.from('bookings').update(updateData).eq('id', payBookingId);
+    if (error) {
+      toast.error('Failed to record payment: ' + error.message);
+    } else {
+      toast.success(`✅ Payment recorded! ${refundAmount > 0 ? `Refund of ${formatPeso(refundAmount)} noted.` : ''}`);
+      // Write tamper-proof activity log
+      void writeActivityLog({
+        action: 'payment_recorded',
+        entity_type: 'payment',
+        entity_id: payBookingId,
+        before_state: { paymentStatus: meta.paymentStatus, amountPaid: meta.amountPaid },
+        after_state: { paymentStatus, paymentMethod: payMethod, amountPaid: paid, transactionId: payTransactionId.trim() || undefined, refundAmount: refundAmount > 0 ? refundAmount : undefined },
+      });
+      setPayBookingId(null);
+      setPayAmount('');
+      setPayTransactionId('');
+      setActualGroupSize('');
+      loadAllBookings();
+    }
+    setPaySaving(false);
+  };
 
   /* ── Capacity Management ── */
   const loadUpcomingCapacities = async () => {
@@ -411,6 +575,18 @@ export default function AdminDashboard() {
             </TabsTrigger>
             <TabsTrigger value="capacity" className="gap-1.5 data-[state=active]:bg-primary/20 data-[state=active]:text-primary">
               <SlidersHorizontal className="h-3.5 w-3.5" /> Daily Capacity
+            </TabsTrigger>
+            <TabsTrigger value="scan" className="gap-1.5 data-[state=active]:bg-primary/20 data-[state=active]:text-primary">
+              <ScanLine className="h-3.5 w-3.5" /> QR Check-in
+            </TabsTrigger>
+            <TabsTrigger value="payments" className="gap-1.5 data-[state=active]:bg-primary/20 data-[state=active]:text-primary">
+              <CreditCard className="h-3.5 w-3.5" /> Payments
+            </TabsTrigger>
+            <TabsTrigger value="payment-summary" className="gap-1.5 data-[state=active]:bg-primary/20 data-[state=active]:text-primary">
+              <BarChart2 className="h-3.5 w-3.5" /> Reports
+            </TabsTrigger>
+            <TabsTrigger value="demographics" className="gap-1.5 data-[state=active]:bg-primary/20 data-[state=active]:text-primary">
+              <Users className="h-3.5 w-3.5" /> Demographics
             </TabsTrigger>
           </TabsList>
 
@@ -1279,6 +1455,274 @@ export default function AdminDashboard() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+          {/* ─────────────────────────────── QR CHECK-IN TAB ── */}
+          <TabsContent value="scan" className="space-y-6">
+            <div>
+              <h2 className="text-lg font-semibold">Onsite QR Check-in</h2>
+              <p className="text-sm text-muted-foreground">
+                Scan QR code with camera, or search by Booking ID or hiker's full name.
+              </p>
+            </div>
+
+            <Card className="glass-card">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <QrCode className="h-5 w-5 text-primary" /> QR Scanner &amp; Lookup
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <QRCameraScanner
+                  onScan={(value) => { setQrInput(value); void handleQrLookup(); }}
+                  manualInput={qrInput}
+                  onManualInputChange={setQrInput}
+                  onManualSubmit={handleQrLookup}
+                  loading={scanLoading}
+                />
+
+                {scannedBooking && (() => {
+                  const meta = parseMeta(scannedBooking.notes);
+                  const { totalFee } = calculateFees(scannedBooking.group_size);
+                  const payStatus = meta.paymentStatus ?? 'unpaid';
+                  return (
+                    <div className="rounded-2xl border border-primary/30 bg-primary/5 p-5 space-y-5">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="h-5 w-5 text-primary" />
+                          <span className="font-semibold text-primary">Booking Found</span>
+                        </div>
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                          scannedBooking.status === 'confirmed' ? 'bg-primary/20 text-primary' : 'bg-warning/20 text-warning'
+                        }`}>
+                          {scannedBooking.status}
+                        </span>
+                      </div>
+
+                      <div className="grid sm:grid-cols-2 gap-x-8 gap-y-2.5 text-sm">
+                        {[
+                          { label: 'Full Name', value: meta.fullName || scannedBooking.emergency_contact_name || '—' },
+                          { label: 'Group Size', value: `${scannedBooking.group_size} pax` },
+                          { label: 'Booking Date', value: scannedBooking.booking_date },
+                          { label: 'Start Time', value: meta.hikeTime || '—' },
+                          { label: 'Hike Type', value: meta.hikeType === 'night' ? '🌙 Night Hike' : '☀️ Day Hike' },
+                          { label: 'Sex', value: meta.sex === 'male' ? 'Male' : meta.sex === 'female' ? 'Female' : meta.sex === 'prefer_not_to_say' ? 'Prefer not to say' : '—' },
+                          { label: 'Age', value: meta.age || '—' },
+                          { label: 'Phone', value: meta.phoneNumber || scannedBooking.emergency_contact_phone || '—' },
+                          { label: 'Email', value: meta.emailAddress || '—' },
+                          { label: 'Assigned Guide', value: meta.assignedGuide || 'Not yet assigned' },
+                          { label: 'Preferred Guide', value: meta.preferredGuide || 'No preference' },
+                          { label: 'Payment', value: `${payStatus.toUpperCase()} — ${formatPeso(meta.amountPaid ?? 0)} / ${formatPeso(totalFee)}` },
+                        ].map(({ label, value }) => (
+                          <div key={label} className="flex justify-between border-b border-border/10 py-1.5">
+                            <span className="text-muted-foreground text-xs font-semibold uppercase tracking-wide">{label}</span>
+                            <span className="font-semibold text-sm text-right max-w-[55%] truncate">{value}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Companions */}
+                      {meta.companions && meta.companions.length > 0 && (
+                        <div className="space-y-1">
+                          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Companions ({meta.companions.length})</p>
+                          <div className="flex flex-wrap gap-2">
+                            {meta.companions.map((c: string, i: number) => (
+                              <span key={i} className="px-2.5 py-1 rounded-full text-xs bg-secondary/50 border border-border/20">{c}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Minors notice */}
+                      {meta.hasMinors && (
+                        <div className="flex items-start gap-2 rounded-xl border border-amber-400/40 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-300">
+                          <Baby className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                          <span><strong>{meta.minorCount ?? 1} minor(s)</strong> in group — verify parental consent letter and parent ID onsite before starting hike.</span>
+                        </div>
+                      )}
+
+                      {/* Medical notes */}
+                      {meta.medicalNotes && (
+                        <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-xs space-y-1">
+                          <p className="font-bold text-destructive">Medical Notes</p>
+                          <p className="text-muted-foreground">{meta.medicalNotes}</p>
+                        </div>
+                      )}
+
+                      {/* Start Hike button */}
+                      {meta.onsiteStartConfirmed || hikeStarted ? (
+                        <div className="flex items-center gap-2 rounded-xl bg-primary/10 border border-primary/30 p-3 text-sm text-primary font-semibold">
+                          <CheckCircle2 className="h-5 w-5" />
+                          Hike already started — session is active.
+                          {meta.onsiteStartTime && (
+                            <span className="text-xs font-normal text-muted-foreground ml-auto">
+                              {new Date(meta.onsiteStartTime).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          )}
+                        </div>
+                      ) : scannedBooking.status !== 'confirmed' ? (
+                        <div className="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/5 p-3 text-xs text-warning">
+                          <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                          Booking is not confirmed yet. Confirm booking first before starting the hike.
+                        </div>
+                      ) : (
+                        <Button className="w-full gap-2" onClick={handleStartHike} disabled={startingHike}>
+                          {startingHike ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                          Confirm Onsite Start — Begin Hike
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })()}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ─────────────────────────────── PAYMENTS TAB ── */}
+          <TabsContent value="payments" className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">Payment Tracking</h2>
+                <p className="text-sm text-muted-foreground">Record and monitor payments for confirmed bookings.</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={loadAllBookings} className="gap-1.5">
+                <RefreshCw className="h-3.5 w-3.5" /> Refresh
+              </Button>
+            </div>
+
+            {allBookings.length === 0 ? (
+              <div className="text-center py-16">
+                <Receipt className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+                <p className="text-muted-foreground">No confirmed bookings to track yet.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {allBookings.map((b) => {
+                  const meta = parseMeta(b.notes);
+                  const { entryFee, envFee, guideFee, totalFee } = calculateFees(b.group_size);
+                  const payStatus = meta.paymentStatus ?? 'unpaid';
+                  const payStatusColors: Record<string, string> = {
+                    paid:    'bg-primary/20 text-primary',
+                    partial: 'bg-sky-500/20 text-sky-600 dark:text-sky-400',
+                    unpaid:  'bg-warning/20 text-warning',
+                  };
+                  return (
+                    <Card key={b.id} className="glass-card">
+                      <CardContent className="p-5 space-y-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-semibold">{meta.fullName || b.emergency_contact_name || '—'}</p>
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${payStatusColors[payStatus]}`}>
+                                {payStatus.toUpperCase()}
+                              </span>
+                              {meta.refundAmount && (
+                                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-destructive/15 text-destructive">
+                                  REFUND: {formatPeso(meta.refundAmount)}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground">{b.booking_date} • {b.group_size} pax • {b.status}</p>
+                          </div>
+                          {payBookingId !== b.id && (
+                            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => {
+                              setPayBookingId(b.id);
+                              setPayAmount(String(meta.amountPaid ?? ''));
+                              setPayTransactionId(meta.transactionId ?? '');
+                              setPayMethod((meta.paymentMethod as PaymentMethod) ?? 'onsite');
+                              setActualGroupSize('');
+                            }}>
+                              <CreditCard className="h-3.5 w-3.5" /> Record Payment
+                            </Button>
+                          )}
+                        </div>
+
+                        {/* Fee breakdown */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                          {[
+                            { label: 'Entry Fee', value: formatPeso(meta.entryFee ?? entryFee) },
+                            { label: 'Env./DSPA Fee', value: formatPeso(meta.envFee ?? envFee) },
+                            { label: 'Guide Fee', value: formatPeso(meta.guideFee ?? guideFee) },
+                            { label: 'Total Due', value: formatPeso(meta.totalFee ?? totalFee), bold: true },
+                          ].map(({ label, value, bold }) => (
+                            <div key={label} className="rounded-lg bg-secondary/30 px-3 py-2">
+                              <p className="text-muted-foreground mb-0.5">{label}</p>
+                              <p className={bold ? 'font-black text-primary text-sm' : 'font-semibold'}>{value}</p>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Payment details if recorded */}
+                        {meta.amountPaid != null && (
+                          <div className="text-xs text-muted-foreground space-y-0.5">
+                            <p>Amount Paid: <strong className="text-foreground">{formatPeso(meta.amountPaid)}</strong></p>
+                            {meta.paymentMethod && <p>Method: <strong className="text-foreground">{PAYMENT_METHOD_LABELS[meta.paymentMethod as PaymentMethod]}</strong></p>}
+                            {meta.transactionId && <p>Transaction ID: <strong className="text-foreground font-mono">{meta.transactionId}</strong></p>}
+                            {meta.actualGroupSize && <p>Actual Group: <strong className="text-foreground">{meta.actualGroupSize} pax</strong> (booked: {b.group_size})</p>}
+                            {meta.refundReason && <p className="text-destructive">{meta.refundReason}</p>}
+                            {meta.paymentScreenshotUrl && (
+                              <a href={meta.paymentScreenshotUrl} target="_blank" rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-primary hover:underline mt-1">
+                                <ExternalLink className="h-3 w-3" /> View Payment Screenshot
+                              </a>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Record payment inline form */}
+                        {payBookingId === b.id && (
+                          <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-3">
+                            <p className="text-sm font-semibold">Record Payment</p>
+                            <div className="grid sm:grid-cols-2 gap-3">
+                              <div className="space-y-1.5">
+                                <Label className="text-xs">Amount Paid (₱)</Label>
+                                <Input type="number" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} placeholder={String(meta.totalFee ?? totalFee)} />
+                              </div>
+                              <div className="space-y-1.5">
+                                <Label className="text-xs">Payment Method</Label>
+                                <Select value={payMethod} onValueChange={(v) => setPayMethod(v as PaymentMethod)}>
+                                  <SelectTrigger><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="onsite">Pay Onsite (Cash)</SelectItem>
+                                    <SelectItem value="gcash">GCash</SelectItem>
+                                    <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="space-y-1.5">
+                                <Label className="text-xs">Transaction ID / Reference</Label>
+                                <Input value={payTransactionId} onChange={(e) => setPayTransactionId(e.target.value)} placeholder="Ref. no. or receipt no." />
+                              </div>
+                              <div className="space-y-1.5">
+                                <Label className="text-xs">Actual Group Size (if changed)</Label>
+                                <Input type="number" value={actualGroupSize} onChange={(e) => setActualGroupSize(e.target.value)} placeholder={String(b.group_size)} />
+                                <p className="text-[10px] text-muted-foreground">Leave blank if group size didn't change. Refund will be auto-calculated.</p>
+                              </div>
+                            </div>
+                            <div className="flex gap-2 pt-1">
+                              <Button variant="outline" className="flex-1" onClick={() => setPayBookingId(null)} disabled={paySaving}>Cancel</Button>
+                              <Button className="flex-1 gap-2" onClick={handleRecordPayment} disabled={paySaving}>
+                                {paySaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                                Save Payment
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* ─────────────────────────────── PAYMENT REPORTS TAB ── */}
+          <TabsContent value="payment-summary">
+            <PaymentSummaryTab />
+          </TabsContent>
+
+          {/* ─────────────────────────────── DEMOGRAPHICS TAB ── */}
+          <TabsContent value="demographics">
+            <DemographicsTab />
           </TabsContent>
         </Tabs>
       </div>

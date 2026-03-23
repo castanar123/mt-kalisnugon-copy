@@ -13,6 +13,8 @@ export default function DashboardRedirect() {
 
   useEffect(() => {
     if (loading) return;
+    // If a user session exists but role hasn't resolved yet, keep waiting
+    if (role === null) return;
     if (role === 'admin') navigate('/admin', { replace: true });
     else if (role === 'ranger') navigate('/ranger', { replace: true });
     else if (role === 'guide') navigate('/guide', { replace: true });

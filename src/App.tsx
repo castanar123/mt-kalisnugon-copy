@@ -22,7 +22,16 @@ import NotificationsPage from "./pages/NotificationsPage";
 import NotFound from "./pages/NotFound";
 import RoleRoute from "@/components/auth/RoleRoute";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000,   // 5 min — prevents refetch on every tab switch
+      gcTime: 10 * 60 * 1000,     // 10 min cache retention
+      refetchOnWindowFocus: false, // Don't refetch when switching browser tabs
+      retry: 1,
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>

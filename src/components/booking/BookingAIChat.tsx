@@ -611,14 +611,6 @@ export default function BookingAIChat({
               >
                 <X className="h-4 w-4" />
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="hidden sm:inline-flex h-8"
-                onClick={() => setIsOpen(false)}
-              >
-                Collapse
-              </Button>
             </div>
 
             {/* Context chips */}

@@ -32,6 +32,8 @@ import {
   CheckCircle2,
   XCircle,
   CalendarClock,
+  Star,
+  Send,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'sonner';
@@ -39,6 +41,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import SOSPanel from '@/components/core/SOSPanel';
 import { parseMeta } from '@/lib/bookingMeta';
 import { loadAnnouncements, type AdminAnnouncement } from '@/lib/announcements';
+import { addGuideRating } from '@/lib/guideRatings';
+import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 const STATUS_STYLES: Record<string, string> = {
   confirmed: 'bg-primary/20 text-primary',
@@ -62,6 +68,16 @@ export default function HikerDashboard() {
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const [decliningId, setDecliningId] = useState<string | null>(null);
   const [importantAnnouncements, setImportantAnnouncements] = useState<AdminAnnouncement[]>([]);
+  // Review state
+  const [reviewSessionId, setReviewSessionId] = useState<string | null>(null);
+  const [hikeRating, setHikeRating] = useState(5);
+  const [hikeReviewText, setHikeReviewText] = useState('');
+  const [guideRating, setGuideRating] = useState(5);
+  const [guideReviewText, setGuideReviewText] = useState('');
+  const [reviewedSessionIds, setReviewedSessionIds] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('reviewed_sessions') || '[]')); } catch { return new Set(); }
+  });
+  const [submittingReview, setSubmittingReview] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -137,9 +153,51 @@ export default function HikerDashboard() {
     setDecliningId(null);
   };
 
+  /* ── Submit hike review ── */
+  const handleSubmitReview = async (session: any) => {
+    if (!user || !hikeReviewText.trim()) { toast.error('Please write a review.'); return; }
+    setSubmittingReview(true);
+    // Find booking for this session to get guide info
+    const booking = bookings.find((b) => b.id === session.booking_id);
+    const meta = booking ? parseMeta(booking.notes) : {};
+    const assignedGuide = meta.assignedGuide;
+
+    // Submit hiking experience review to Supabase
+    const { error } = await supabase
+      .from('reviews')
+      .insert({
+        user_id: user.id,
+        reviewer_name: meta.fullName || user.email || 'Hiker',
+        rating: hikeRating,
+        review_text: hikeReviewText.trim(),
+        trail_name: 'Summit Trail',
+        is_approved: true,
+      });
+
+    if (error) {
+      toast.error('Failed to submit review: ' + error.message);
+    } else {
+      // Save guide rating to localStorage if guide was assigned and rated
+      if (assignedGuide && guideReviewText.trim()) {
+        const guideId = `guide_${assignedGuide.replace(/\s+/g, '_').toLowerCase()}`;
+        addGuideRating(guideId, assignedGuide, 'Summit Trail', guideRating, guideReviewText.trim(), meta.fullName || 'Hiker');
+      }
+      // Mark session as reviewed
+      const updated = new Set([...reviewedSessionIds, session.id]);
+      setReviewedSessionIds(updated);
+      localStorage.setItem('reviewed_sessions', JSON.stringify([...updated]));
+      setReviewSessionId(null);
+      setHikeReviewText('');
+      setGuideReviewText('');
+      toast.success('Thank you for your review! It helps future hikers.');
+    }
+    setSubmittingReview(false);
+  };
+
   /* ── Derived data ── */
   const adjustmentPending = bookings.filter((b) => b.status === 'adjustment_pending');
   const hasNotifications = adjustmentPending.length > 0;
+  const completedSessions = sessions.filter((s) => s.status === 'completed');
 
   return (
     <div className="min-h-screen pt-20 pb-12 px-4">
@@ -349,6 +407,113 @@ export default function HikerDashboard() {
         <div className="mb-6">
           <SOSPanel />
         </div>
+
+        {/* ── Review Section: completed hikes ── */}
+        {completedSessions.length > 0 && (
+          <Card className="glass-card mb-6">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Star className="h-5 w-5 text-amber-500" /> Rate Your Hike Experience
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">Only completed hikes are eligible for reviews.</p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {completedSessions.map((session) => {
+                const booking = bookings.find((b) => b.id === session.booking_id);
+                const meta = booking ? parseMeta(booking.notes) : {};
+                const alreadyReviewed = reviewedSessionIds.has(session.id);
+                return (
+                  <div key={session.id} className="rounded-xl border border-border/20 bg-secondary/20 p-4 space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div>
+                        <p className="text-sm font-semibold">
+                          Hike on {session.start_time ? new Date(session.start_time).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{session.total_distance_km?.toFixed(1) ?? '0'} km completed</p>
+                      </div>
+                      {alreadyReviewed ? (
+                        <span className="px-3 py-1 rounded-full text-xs bg-primary/20 text-primary font-semibold">✓ Reviewed</span>
+                      ) : (
+                        <Button size="sm" variant="outline" className="gap-1.5 text-amber-600 border-amber-400/40 hover:bg-amber-500/10"
+                          onClick={() => setReviewSessionId(reviewSessionId === session.id ? null : session.id)}>
+                          <Star className="h-3.5 w-3.5" />
+                          {reviewSessionId === session.id ? 'Close' : 'Leave Review'}
+                        </Button>
+                      )}
+                    </div>
+
+                    <AnimatePresence>
+                      {reviewSessionId === session.id && !alreadyReviewed && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="space-y-4 overflow-hidden"
+                        >
+                          {/* Hike rating */}
+                          <div className="space-y-2">
+                            <Label className="text-xs font-bold uppercase tracking-wider">Hiking Experience Rating</Label>
+                            <div className="flex gap-1">
+                              {[1, 2, 3, 4, 5].map((n) => (
+                                <button key={n} type="button" onClick={() => setHikeRating(n)}
+                                  className="transition-transform hover:scale-110">
+                                  <Star className={`h-7 w-7 ${n <= hikeRating ? 'fill-amber-400 text-amber-400' : 'text-border'}`} />
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor={`hikeReview-${session.id}`} className="text-xs font-bold uppercase tracking-wider">Your Review</Label>
+                            <Textarea
+                              id={`hikeReview-${session.id}`}
+                              value={hikeReviewText}
+                              onChange={(e) => setHikeReviewText(e.target.value)}
+                              placeholder="Share your experience with Mt. Kalisungan..."
+                              rows={3}
+                            />
+                          </div>
+
+                          {/* Guide rating (if guide was assigned) */}
+                          {meta.assignedGuide && (
+                            <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-3">
+                              <p className="text-sm font-semibold">Rate your guide: <span className="text-primary">{meta.assignedGuide}</span></p>
+                              <div className="space-y-2">
+                                <Label className="text-xs font-bold uppercase tracking-wider">Guide Rating</Label>
+                                <div className="flex gap-1">
+                                  {[1, 2, 3, 4, 5].map((n) => (
+                                    <button key={n} type="button" onClick={() => setGuideRating(n)}
+                                      className="transition-transform hover:scale-110">
+                                      <Star className={`h-7 w-7 ${n <= guideRating ? 'fill-amber-400 text-amber-400' : 'text-border'}`} />
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor={`guideReview-${session.id}`} className="text-xs font-bold uppercase tracking-wider">Guide Review (optional)</Label>
+                                <Textarea
+                                  id={`guideReview-${session.id}`}
+                                  value={guideReviewText}
+                                  onChange={(e) => setGuideReviewText(e.target.value)}
+                                  placeholder={`How was ${meta.assignedGuide} as your guide?`}
+                                  rows={2}
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          <Button className="w-full gap-2" onClick={() => handleSubmitReview(session)} disabled={submittingReview}>
+                            {submittingReview ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                            Submit Review
+                          </Button>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Bookings list */}
         <Card className="glass-card">
