@@ -158,12 +158,12 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="min-h-screen pt-20 pb-16 px-4">
+    <div className="min-h-screen pt-20 pb-16 px-3 sm:px-4">
       <div className="container max-w-5xl mx-auto">
 
         {/* ── Header ── */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-          <div className="flex items-center gap-4 mb-8">
+          <div className="flex items-center gap-3 sm:gap-4 mb-8 flex-wrap">
             <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
               <User className="h-8 w-8 text-primary" />
             </div>
@@ -183,7 +183,7 @@ export default function ProfilePage() {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="grid grid-cols-3 gap-4 mb-8"
+          className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-8"
         >
           {[
             { label: 'Total Bookings', value: stats.totalHikes, icon: CalendarCheck, color: 'text-primary' },
@@ -346,10 +346,10 @@ export default function ProfilePage() {
 
                       {/* Info */}
                       <div className="text-center space-y-1">
-                        <p className="font-semibold text-sm">{b.booking_date}</p>
+                          <p className="font-semibold text-sm break-words">{b.booking_date}</p>
                         <p className="text-xs text-muted-foreground">{b.group_size} pax</p>
                         {b.notes && (
-                          <p className="text-xs text-muted-foreground italic truncate">{b.notes}</p>
+                          <p className="text-xs text-muted-foreground italic break-words">{b.notes}</p>
                         )}
                         <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[b.status] ?? 'bg-secondary text-secondary-foreground'}`}>
                           {b.status}

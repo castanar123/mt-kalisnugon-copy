@@ -1,14 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { MessageSquarePlus, Send, Loader2, Quote } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Quote } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
-import { toast } from 'sonner';
 
 interface Review {
   id: string;
@@ -115,71 +108,8 @@ function ReviewCard({ review, index }: { review: Review; index: number }) {
   );
 }
 
-function ReviewForm({ onSubmitted }: { onSubmitted: () => void }) {
-  const { user } = useAuth();
-  const [name, setName] = useState('');
-  const [trail, setTrail] = useState('');
-  const [text, setText] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user) { toast.error('Please sign in to submit a review'); return; }
-    if (!name.trim() || !trail || !text.trim()) { toast.error('Please fill in all fields'); return; }
-    if (text.trim().length < 10) { toast.error('Review must be at least 10 characters'); return; }
-
-    setSubmitting(true);
-    const { error } = await supabase.from('reviews').insert({
-      user_id: user.id,
-      reviewer_name: name.trim().slice(0, 100),
-      trail_name: trail,
-      rating: 5,
-      review_text: text.trim().slice(0, 500),
-    });
-
-    if (error) {
-      toast.error('Failed to submit review');
-      console.error(error);
-    } else {
-      toast.success('Review submitted! It will appear after admin approval.');
-      setName(''); setTrail(''); setText('');
-      onSubmitted();
-    }
-    setSubmitting(false);
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
-        <Input placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
-        <Select value={trail} onValueChange={setTrail}>
-          <SelectTrigger><SelectValue placeholder="Trail hiked" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="Summit Trail">Summit Trail</SelectItem>
-            <SelectItem value="Ridge Route">Ridge Route</SelectItem>
-            <SelectItem value="Scenic Loop">Scenic Loop</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <Textarea
-        placeholder="Share your hiking experience..."
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        maxLength={500}
-        rows={4}
-      />
-      <p className="text-xs text-muted-foreground">{text.length}/500 characters</p>
-      <Button type="submit" disabled={submitting || !user} className="w-full">
-        {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Send className="h-4 w-4 mr-2" />}
-        {user ? 'Submit Review' : 'Sign in to Review'}
-      </Button>
-    </form>
-  );
-}
-
 export default function HikerReviews() {
   const [reviews, setReviews] = useState<Review[]>(fallbackReviews);
-  const [dialogOpen, setDialogOpen] = useState(false);
 
   const fetchReviews = async () => {
     const { data, error } = await supabase
@@ -230,29 +160,6 @@ export default function HikerReviews() {
           ))}
         </div>
 
-        {/* CTA */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.35 }}
-          className="text-center"
-        >
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="lg" className="gap-2 shadow-md hover:shadow-lg transition-shadow">
-                <MessageSquarePlus className="h-4 w-4" />
-                Share Your Experience
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>Write a Review</DialogTitle>
-              </DialogHeader>
-              <ReviewForm onSubmitted={() => { setDialogOpen(false); fetchReviews(); }} />
-            </DialogContent>
-          </Dialog>
-        </motion.div>
       </div>
     </section>
   );

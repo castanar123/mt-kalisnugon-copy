@@ -327,24 +327,20 @@ export default function Index() {
               <span className="h-px w-7 bg-primary/50" />
             </div>
             <h2 className="text-3xl md:text-4xl font-bold mb-4 leading-tight">
-              About <span className="text-gradient">Mt. Kalisungan</span>
+              <span className="text-gradient">Mt. Kalisungan</span>
             </h2>
             <p className="text-base md:text-lg text-muted-foreground leading-relaxed">
-              Mt. Kalisungan rises in Calauan, Laguna and is also connected in local trail stories to nearby Lamot and
-              Nagcarlan routes. It is known today for sunrise treks, rolling ridgelines, and a welcoming local hiking
-              culture. Community accounts also mention wartime history in this mountain area during the final years of
-              World War II. If you want route tips, safety guidance, or planning help, you can know more anytime by
-              chatting with the in-app AI assistant.
+              Mount Kalisungan is a well-known hiking destination in Calauan, Laguna, recognized for its
+              open grassland trails and scenic summit views. The mountain features a mix of gentle slopes and
+              gradual ascents, making it accessible for beginners while still enjoyable for experienced hikers.
+              <br /><br />
+              From the summit, hikers are rewarded with wide views of Laguna and nearby mountain ranges, especially
+              during sunrise and sunset.
             </p>
             <div className="mt-5 flex flex-wrap justify-center gap-2">
               <span className="px-3 py-1 rounded-full text-xs bg-primary/10 text-primary border border-primary/20">Calauan, Laguna</span>
               <span className="px-3 py-1 rounded-full text-xs bg-secondary/60 text-foreground border border-border/40">Lamot - Nagcarlan routes</span>
               <span className="px-3 py-1 rounded-full text-xs bg-secondary/60 text-foreground border border-border/40">Sunrise ridge treks</span>
-            </div>
-            <div className="mt-6 flex justify-center">
-              <Button asChild size="sm">
-                <Link to="/chat">Know More with AI Chat</Link>
-              </Button>
             </div>
           </div>
         </div>

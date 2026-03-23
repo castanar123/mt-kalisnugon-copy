@@ -588,7 +588,7 @@ export default function BookingAIChat({
               if (startX - endX > 70) setIsOpen(false);
               touchStartX.current = null;
             }}
-            className="fixed inset-0 z-40 w-screen sm:w-[360px] sm:left-0 sm:top-0 sm:bottom-0 sm:right-auto flex flex-col bg-card sm:border-r border-border/50 shadow-2xl"
+            className="fixed inset-0 z-[2100] w-screen sm:w-[360px] sm:left-0 sm:right-auto sm:top-16 sm:bottom-0 flex flex-col bg-card sm:border-r border-border/50 shadow-2xl"
           >
             {/* Header */}
             <div className="flex items-center gap-3 p-4 border-b border-border/30 bg-primary/5">
@@ -610,6 +610,14 @@ export default function BookingAIChat({
                 aria-label="Close chat"
               >
                 <X className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="hidden sm:inline-flex h-8"
+                onClick={() => setIsOpen(false)}
+              >
+                Collapse
               </Button>
             </div>
 

@@ -532,8 +532,8 @@ export default function BookingPage() {
 
   /* ─────────────── BOOKING FORM ─────────────── */
   return (
-    <div className="min-h-screen pt-20 pb-24 md:pb-12 px-4">
-      <div className="container max-w-4xl mx-auto">
+    <div className="min-h-screen pt-20 pb-24 md:pb-12 px-2 sm:px-4">
+      <div className="container max-w-5xl mx-auto">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-10">
           <h1 className="text-3xl font-bold mb-2">
             Book Your <span className="text-gradient">Hike</span>
@@ -587,7 +587,7 @@ export default function BookingPage() {
         </div>
 
         {/* ─── Step Content ─── */}
-        <div className="max-w-2xl mx-auto">
+        <div className="max-w-none md:max-w-2xl mx-auto">
           <AnimatePresence mode="wait">
             <motion.div
               key={step}
@@ -596,7 +596,7 @@ export default function BookingPage() {
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.25 }}
             >
-              <Card className="glass-card border-primary/20 p-5 sm:p-8">
+              <Card className="glass-card border-primary/20 p-4 sm:p-8">
 
                 {/* ═══════════════ STEP 1: SCHEDULE ═══════════════ */}
                 {step === 1 && (
@@ -641,7 +641,7 @@ export default function BookingPage() {
                     </div>
 
                     {/* Capacity Calendar */}
-                    <div className="rounded-xl border border-border/30 p-3 sm:p-4 bg-background/40">
+                    <div className="rounded-xl border border-border/30 p-2 sm:p-4 bg-background/40">
                       <CapacityCalendar
                         selected={date}
                         onSelect={setDate}
