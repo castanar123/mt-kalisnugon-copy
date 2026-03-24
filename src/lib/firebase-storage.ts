@@ -10,26 +10,18 @@
  *   VITE_FIREBASE_APP_ID=...
  */
 
-import { initializeApp, getApps } from 'firebase/app';
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY as string,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN as string,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID as string,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET as string,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID as string,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID as string,
-};
+import { getFirebaseApp, isFirebaseConfigured } from './firebase';
+export { isFirebaseConfigured } from './firebase';
 
 let storage: ReturnType<typeof getStorage> | null = null;
 
 function getFirebaseStorage() {
-  if (!firebaseConfig.apiKey) {
+  const app = getFirebaseApp();
+  if (!app) {
     return null; // Firebase not configured yet
   }
   if (storage) return storage;
-  const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
   storage = getStorage(app);
   return storage;
 }
@@ -112,5 +104,3 @@ export async function deletePaymentScreenshot(path: string): Promise<void> {
   }
 }
 
-export const isFirebaseConfigured = (): boolean =>
-  Boolean(import.meta.env.VITE_FIREBASE_API_KEY);

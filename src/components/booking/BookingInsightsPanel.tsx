@@ -103,7 +103,7 @@ export default function BookingInsightsPanel({
   const hasActiveInsights = smartGuideEnabled && (weatherInsight || weatherLoading);
 
   return (
-    <div className="fixed right-4 top-24 z-30 w-72 hidden lg:block">
+    <div className="fixed right-4 top-24 z-20 w-72 hidden xl:block">
       <motion.div
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
@@ -172,7 +172,7 @@ export default function BookingInsightsPanel({
               transition={{ duration: 0.25, ease: 'easeInOut' }}
               style={{ overflow: 'hidden' }}
             >
-              <div className="p-3 space-y-3 max-h-[calc(100vh-160px)] overflow-y-auto">
+              <div className="p-3 space-y-3 max-h-[65vh] overflow-y-auto">
                 {/* Smart Guide OFF state */}
                 {!smartGuideEnabled && (
                   <div className="text-center py-5 space-y-3">

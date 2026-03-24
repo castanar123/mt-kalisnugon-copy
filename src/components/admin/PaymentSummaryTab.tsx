@@ -17,6 +17,7 @@ import {
   ShieldCheck, History, CheckCircle2, AlertTriangle,
 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachMonthOfInterval, subMonths, startOfYear } from 'date-fns';
+import { eachDayOfInterval, eachWeekOfInterval, endOfWeek, startOfWeek } from 'date-fns';
 
 interface PaymentRow {
   bookingId: string;
@@ -39,6 +40,9 @@ export default function PaymentSummaryTab() {
   const [rows, setRows] = useState<PaymentRow[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [trendMode, setTrendMode] = useState<'day' | 'week' | 'month' | 'year' | 'custom'>('month');
+  const [customStart, setCustomStart] = useState('');
+  const [customEnd, setCustomEnd] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -116,6 +120,43 @@ export default function PaymentSummaryTab() {
     return Object.entries(yearMap).sort(([a], [b]) => a.localeCompare(b)).map(([year, v]) => ({ year, ...v }));
   }, [rows]);
 
+  const bookingRows = useMemo(() => rows.map((r) => ({ ...r, dateObj: new Date(r.bookingDate) })), [rows]);
+
+  const trendData = useMemo(() => {
+    const now = new Date();
+    if (trendMode === 'day') {
+      const days = eachDayOfInterval({ start: subMonths(now, 1), end: now });
+      return days.map((d) => {
+        const key = format(d, 'yyyy-MM-dd');
+        const hit = bookingRows.filter((r) => format(r.dateObj, 'yyyy-MM-dd') === key);
+        return { label: format(d, 'MMM d'), bookings: hit.length };
+      });
+    }
+    if (trendMode === 'week') {
+      const weeks = eachWeekOfInterval({ start: subMonths(now, 3), end: now });
+      return weeks.map((w) => {
+        const ws = startOfWeek(w);
+        const we = endOfWeek(w);
+        const hit = bookingRows.filter((r) => r.dateObj >= ws && r.dateObj <= we);
+        return { label: `${format(ws, 'MMM d')}`, bookings: hit.length };
+      });
+    }
+    if (trendMode === 'year') {
+      return yearlyData.map((y) => ({ label: y.year, bookings: y.bookings }));
+    }
+    if (trendMode === 'custom' && customStart && customEnd) {
+      const s = new Date(`${customStart}T00:00:00`);
+      const e = new Date(`${customEnd}T23:59:59`);
+      const days = eachDayOfInterval({ start: s, end: e });
+      return days.map((d) => {
+        const key = format(d, 'yyyy-MM-dd');
+        const hit = bookingRows.filter((r) => format(r.dateObj, 'yyyy-MM-dd') === key);
+        return { label: format(d, 'MMM d'), bookings: hit.length };
+      });
+    }
+    return monthlyData.map((m) => ({ label: m.month, bookings: m.bookings }));
+  }, [trendMode, bookingRows, monthlyData, yearlyData, customStart, customEnd]);
+
   const handleExport = () => {
     const paymentRows = rows.map((r) => ({
       'Booking ID': r.bookingId,
@@ -155,8 +196,17 @@ export default function PaymentSummaryTab() {
       'After State': l.after_state ? JSON.stringify(l.after_state) : '',
     }));
 
+    const bookingTrendExport = trendData.map((t) => ({
+      'Label': t.label,
+      'Total Bookings': t.bookings,
+      'View': trendMode,
+      'From': customStart || '',
+      'To': customEnd || '',
+    }));
+
     exportToExcelMultiSheet([
       { name: 'All Payments', rows: paymentRows },
+      { name: 'Booking Trends', rows: bookingTrendExport },
       { name: 'Monthly Summary', rows: monthlyExport },
       { name: 'Yearly Summary', rows: yearlyExport },
       { name: 'Activity Log', rows: logExport },
@@ -231,6 +281,49 @@ export default function PaymentSummaryTab() {
 
         {/* Monthly */}
         <TabsContent value="monthly" className="space-y-4">
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="text-base">Booking Overview + Exportable Summary</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap gap-2">
+                {[
+                  ['day', 'Per Day'],
+                  ['week', 'Per Week'],
+                  ['month', 'Per Month'],
+                  ['year', 'Per Year'],
+                  ['custom', 'Custom'],
+                ].map(([value, label]) => (
+                  <Button
+                    key={value}
+                    size="sm"
+                    variant={trendMode === value ? 'default' : 'outline'}
+                    onClick={() => setTrendMode(value as typeof trendMode)}
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </div>
+              {trendMode === 'custom' && (
+                <div className="grid sm:grid-cols-2 gap-2">
+                  <input className="h-10 rounded-md border border-input bg-background px-3 text-sm" type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} />
+                  <input className="h-10 rounded-md border border-input bg-background px-3 text-sm" type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} />
+                </div>
+              )}
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={trendData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(155 15% 18%)" />
+                  <XAxis dataKey="label" fontSize={11} stroke="hsl(150 10% 55%)" />
+                  <YAxis fontSize={11} stroke="hsl(150 10% 55%)" />
+                  <Tooltip
+                    contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', color: 'hsl(var(--foreground))' }}
+                  />
+                  <Bar dataKey="bookings" name="Total Bookings" fill="hsl(220 90% 60%)" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
           <Card className="glass-card">
             <CardHeader>
               <CardTitle className="text-base">Monthly Collections (Last 12 Months)</CardTitle>

@@ -9,6 +9,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   CalendarCheck,
   Users,
   Loader2,
@@ -81,6 +88,9 @@ interface WeatherSnapshot {
   rainProbability: number;
   condition: string;
 }
+
+/* ─── Draft persistence key ─── */
+const DRAFT_KEY = 'mt-kalisnugon-booking-draft';
 
 /* ─── Constants ─── */
 const HIKE_TIME_OPTIONS: Record<HikeType, TimeOption[]> = {
@@ -189,10 +199,40 @@ export default function BookingPage() {
   const [companions, setCompanions] = useState<string[]>([]);
   const [companionDetails, setCompanionDetails] = useState<CompanionDetail[]>([]);
   const [medicalNotes, setMedicalNotes] = useState('');
-  const [hasMinors, setHasMinors] = useState(false);
-  const [minorCount, setMinorCount] = useState(1);
   const [preferredGuide, setPreferredGuide] = useState('');
   const [locationSearch, setLocationSearch] = useState('');
+
+  // ── Guide dropdown options ──
+  const [guideOptions, setGuideOptions] = useState<string[]>([]);
+
+  // ── Step 3: Sworn declaration ──
+  const [agreedTruthful, setAgreedTruthful] = useState(false);
+  const [showSwornPrompt, setShowSwornPrompt] = useState(false);
+  const [minorAcknowledged, setMinorAcknowledged] = useState(false);
+  const [committedMainAge, setCommittedMainAge] = useState('');
+  const [committedCompanionAges, setCommittedCompanionAges] = useState<string[]>([]);
+
+  // ── Auto-detected minor status ──
+  const hasMinors = useMemo(() => {
+    const mainIsMinor = committedMainAge.trim() !== '' && Number(committedMainAge) > 0 && Number(committedMainAge) <= 17;
+    const companionIsMinor = committedCompanionAges.some(
+      (raw) => raw.trim() !== '' && Number(raw) > 0 && Number(raw) <= 17,
+    );
+    return mainIsMinor || companionIsMinor;
+  }, [committedMainAge, committedCompanionAges]);
+
+  const minorCount = useMemo(() => {
+    let count = 0;
+    if (committedMainAge.trim() !== '' && Number(committedMainAge) > 0 && Number(committedMainAge) <= 17) count++;
+    count += committedCompanionAges.filter(
+      (raw) => raw.trim() !== '' && Number(raw) > 0 && Number(raw) <= 17,
+    ).length;
+    return count;
+  }, [committedMainAge, committedCompanionAges]);
+
+  useEffect(() => {
+    if (!hasMinors && minorAcknowledged) setMinorAcknowledged(false);
+  }, [hasMinors, minorAcknowledged]);
 
   // ── Step 4: Payment
   const [paymentOption, setPaymentOption] = useState<PaymentOption>('onsite');
@@ -215,6 +255,73 @@ export default function BookingPage() {
 
   const [loading, setLoading] = useState(false);
   const [booking, setBooking] = useState<SubmittedBooking | null>(null);
+
+  /* ── Restore form draft from localStorage ── */
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const d = JSON.parse(raw);
+      if (d.date) setDate(new Date(d.date));
+      if (d.hikeType) setHikeType(d.hikeType);
+      if (d.hikeTime) setHikeTime(d.hikeTime);
+      if (typeof d.groupSize === 'number') setGroupSize(d.groupSize);
+      if (d.fullName) setFullName(d.fullName);
+      if (d.age) setAge(d.age);
+      if (d.sex) setSex(d.sex);
+      if (d.nationality) setNationality(d.nationality);
+      if (d.emailAddress) setEmailAddress(d.emailAddress);
+      if (d.phoneNumber) setPhoneNumber(d.phoneNumber);
+      if (d.province) setProvince(d.province);
+      if (d.city) setCity(d.city);
+      if (d.locationSearch) setLocationSearch(d.locationSearch);
+      if (Array.isArray(d.companions)) setCompanions(d.companions);
+      if (Array.isArray(d.companionDetails)) setCompanionDetails(d.companionDetails);
+      if (d.medicalNotes) setMedicalNotes(d.medicalNotes);
+      if (d.preferredGuide) setPreferredGuide(d.preferredGuide);
+    } catch {
+      // ignore malformed draft
+    }
+  }, []); // mount only
+
+  /* ── Save draft on every change ── */
+  useEffect(() => {
+    if (booking) return;
+    try {
+      localStorage.setItem(
+        DRAFT_KEY,
+        JSON.stringify({
+          date: date?.toISOString(),
+          hikeType, hikeTime, groupSize,
+          fullName, age, sex, nationality,
+          emailAddress, phoneNumber, province, city, locationSearch,
+          companions, companionDetails, medicalNotes, preferredGuide,
+        }),
+      );
+    } catch { /* storage unavailable */ }
+  }, [date, hikeType, hikeTime, groupSize, fullName, age, sex, nationality,
+      emailAddress, phoneNumber, province, city, locationSearch,
+      companions, companionDetails, medicalNotes, preferredGuide, booking]);
+
+  /* ── Fetch guide names for dropdown ── */
+  useEffect(() => {
+    const fetchGuideNames = async () => {
+      try {
+        const { data: roles } = await supabase.from('user_roles').select('user_id').eq('role', 'guide');
+        if (!roles || roles.length === 0) {
+          setGuideOptions(['Rodel Manalansan', 'Bong Villarosa', 'Nilo Santos', 'Allan Reyes']);
+          return;
+        }
+        const ids = roles.map((r: any) => r.user_id);
+        const { data: profiles } = await supabase.from('profiles').select('full_name').in('user_id', ids);
+        const names = (profiles || []).map((p: any) => p.full_name).filter(Boolean);
+        setGuideOptions(names.length ? names : ['Rodel Manalansan', 'Bong Villarosa', 'Nilo Santos', 'Allan Reyes']);
+      } catch {
+        setGuideOptions(['Rodel Manalansan', 'Bong Villarosa', 'Nilo Santos', 'Allan Reyes']);
+      }
+    };
+    void fetchGuideNames();
+  }, []);
 
   /* ── Capacity fetching ── */
   const fetchMonthCapacity = useCallback(async (year: number, month: number) => {
@@ -297,8 +404,8 @@ export default function BookingPage() {
     });
     setCompanionDetails((prev) => {
       if (prev.length === neededCompanions) return prev;
-      if (prev.length < neededCompanions) {
-        return [...prev, ...Array.from({ length: neededCompanions - prev.length }, () => ({ name: '' }))];
+    if (prev.length < neededCompanions) {
+        return [...prev, ...Array.from({ length: neededCompanions - prev.length }, () => ({ name: '', sex: 'prefer_not_to_say' as const }))];
       }
       return prev.slice(0, neededCompanions);
     });
@@ -455,6 +562,7 @@ export default function BookingPage() {
         const missing = companions.findIndex((name) => !name.trim());
         if (missing >= 0) return `Please provide full name for Companion ${missing + 1}.`;
       }
+      if (hasMinors && !minorAcknowledged) return 'Please confirm minor requirements acknowledgment before continuing.';
     }
     if (step === 3) {
       if (!hasScrolledRulesToEnd) return 'Please read the full rules and scroll to the end before agreeing.';
@@ -467,6 +575,10 @@ export default function BookingPage() {
   const next = () => {
     const err = validateStep();
     if (err) { toast.error(err); return; }
+    if (step === 2 && !agreedTruthful) {
+      setShowSwornPrompt(true);
+      return;
+    }
     setStep((s) => s + 1);
   };
 
@@ -581,6 +693,8 @@ export default function BookingPage() {
         paymentOption,
         totalFee: fees.totalFee,
       });
+      // Clear saved draft on successful booking
+      try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
       toast.success('Booking submitted! Awaiting admin approval.');
       confirmReservation({
         id: data.id.toString(),
@@ -651,6 +765,7 @@ export default function BookingPage() {
                 setGroupSize(1);
                 setAgreedRules(false);
                 setAgreedPrivacy(false);
+                setAgreedTruthful(false);
                 setHasScrolledRulesToEnd(false);
                 setHasScrolledPrivacyToEnd(false);
               }}
@@ -974,6 +1089,7 @@ export default function BookingPage() {
                           min={1}
                           value={age}
                           onChange={(e) => setAge(e.target.value)}
+                          onBlur={() => setCommittedMainAge(age)}
                           placeholder="e.g. 24"
                         />
                       </div>
@@ -1130,6 +1246,13 @@ export default function BookingPage() {
                                       max={120}
                                       value={cd.age || ''}
                                       onChange={(e) => updateCompanionDetail(idx, 'age', e.target.value)}
+                                      onBlur={(e) => {
+                                        setCommittedCompanionAges((prev) => {
+                                          const next = [...prev];
+                                          next[idx] = e.target.value;
+                                          return next;
+                                        });
+                                      }}
                                       placeholder="e.g. 25"
                                     />
                                   </div>
@@ -1185,81 +1308,70 @@ export default function BookingPage() {
                         />
                       </div>
 
-                      {/* Minors checklist */}
-                      <div className="space-y-3 sm:col-span-2">
-                        <button
-                          type="button"
-                          onClick={() => setHasMinors((v) => !v)}
-                          className={cn(
-                            'w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-all',
-                            hasMinors
-                              ? 'border-amber-400/60 bg-amber-500/5 text-amber-700 dark:text-amber-300'
-                              : 'border-border/30 text-muted-foreground hover:border-amber-400/30',
-                          )}
-                        >
-                          <Baby className={cn('h-5 w-5 flex-shrink-0', hasMinors ? 'text-amber-500' : 'text-muted-foreground')} />
-                          <div className="flex-1">
-                            <p className="text-sm font-semibold">Are minors (below 18 yrs) included in your group?</p>
-                            <p className="text-xs opacity-70">Tap to toggle — additional requirements apply</p>
-                          </div>
-                          <div className={cn('w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0', hasMinors ? 'border-amber-500 bg-amber-500' : 'border-border/50')}>
-                            {hasMinors && <Check className="h-3 w-3 text-white" />}
-                          </div>
-                        </button>
-
-                        {hasMinors && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="space-y-3"
-                          >
-                            <div className="flex items-center gap-3 p-3 rounded-xl border border-border/20 bg-secondary/20">
-                              <Label htmlFor="minorCount" className="text-sm flex-shrink-0">Number of minors:</Label>
-                              <div className="flex items-center gap-2">
-                                <button type="button" onClick={() => setMinorCount((c) => Math.max(1, c - 1))} className="w-7 h-7 rounded-full border border-border/50 flex items-center justify-center hover:bg-primary/10 transition-all">
-                                  <Minus className="h-3 w-3" />
-                                </button>
-                                <span className="w-6 text-center font-bold">{minorCount}</span>
-                                <button type="button" onClick={() => setMinorCount((c) => Math.min(groupSize - 1, c + 1))} className="w-7 h-7 rounded-full border border-border/50 flex items-center justify-center hover:bg-primary/10 transition-all">
-                                  <Plus className="h-3 w-3" />
-                                </button>
-                              </div>
-                            </div>
-                            <div className="rounded-xl border border-amber-400/40 bg-amber-500/5 p-4 space-y-2.5">
-                              <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300 font-semibold text-sm">
-                                <AlertTriangle className="h-4 w-4" />
-                                Required Documents for Minors (bring onsite)
-                              </div>
-                              {[
-                                'Original signed Parental/Guardian Consent Letter',
-                                'Photocopy of parent or guardian\'s valid government-issued ID',
-                                'Photocopy of the minor\'s PSA Birth Certificate',
-                                'Emergency contact number of parent/guardian in booking details',
-                                'Minor must be accompanied by a responsible adult at all times',
-                              ].map((item, i) => (
-                                <div key={i} className="flex items-start gap-2 text-xs text-amber-800 dark:text-amber-200">
-                                  <Check className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-amber-500" />
-                                  <span>{item}</span>
-                                </div>
-                              ))}
-                              <p className="text-[11px] text-amber-700/80 dark:text-amber-300/80 pt-1 border-t border-amber-400/20 mt-2">
-                                ⚠️ If a parent or guardian is NOT present onsite, the minor MUST carry a notarized parental consent letter and a photocopy of the parent's valid ID. Entry will be denied without these documents.
+                      {/* Minors — auto-detected from ages entered above */}
+                      {hasMinors && (
+                        <div className="space-y-3 sm:col-span-2">
+                          <div className="flex items-center gap-3 p-3 rounded-xl border border-amber-400/60 bg-amber-500/5 text-amber-700 dark:text-amber-300">
+                            <Baby className="h-5 w-5 flex-shrink-0 text-amber-500" />
+                            <div>
+                              <p className="text-sm font-semibold">
+                                {minorCount} minor{minorCount > 1 ? 's' : ''} detected in your group
                               </p>
+                              <p className="text-xs opacity-70">Age 17 or below requires additional documents at the trailhead</p>
                             </div>
-                          </motion.div>
-                        )}
-                      </div>
+                          </div>
+                          <div className="rounded-xl border border-amber-400/40 bg-amber-500/5 p-4 space-y-2.5">
+                            <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300 font-semibold text-sm">
+                              <AlertTriangle className="h-4 w-4" />
+                              Required Documents for Minors (bring onsite)
+                            </div>
+                            {[
+                              'Original signed Parental/Guardian Consent Letter',
+                              "Photocopy of parent or guardian's valid government-issued ID",
+                              "Photocopy of the minor's PSA Birth Certificate",
+                              'Emergency contact number of parent/guardian in booking details',
+                              'Minor must be accompanied by a responsible adult at all times',
+                            ].map((item, i) => (
+                              <div key={i} className="flex items-start gap-2 text-xs text-amber-800 dark:text-amber-200">
+                                <Check className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-amber-500" />
+                                <span>{item}</span>
+                              </div>
+                            ))}
+                            <p className="text-[11px] text-amber-700/80 dark:text-amber-300/80 pt-1 border-t border-amber-400/20 mt-2">
+                              ⚠️ If a parent or guardian is NOT present onsite, the minor MUST carry a notarized parental consent letter and a photocopy of the parent's valid ID. Entry will be denied without these documents.
+                            </p>
+                            <div className="flex items-start space-x-3 p-3 rounded-lg border border-amber-400/30 bg-amber-500/10">
+                              <Checkbox
+                                id="minorAcknowledge"
+                                checked={minorAcknowledged}
+                                onCheckedChange={(v) => setMinorAcknowledged(!!v)}
+                                className="mt-0.5"
+                              />
+                              <Label htmlFor="minorAcknowledge" className="text-xs leading-relaxed cursor-pointer">
+                                I understand the minor requirements and will bring all required documents onsite.
+                              </Label>
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Preferred Guide */}
                       <div className="space-y-2 sm:col-span-2">
                         <Label htmlFor="preferredGuide">Preferred Guide <span className="text-muted-foreground font-normal">(Optional)</span></Label>
-                        <Input
-                          id="preferredGuide"
-                          value={preferredGuide}
-                          onChange={(e) => setPreferredGuide(e.target.value)}
-                          placeholder="Enter guide name if you have a preference, or leave blank"
-                        />
+                        <Select
+                          value={preferredGuide || 'none'}
+                          onValueChange={(v) => setPreferredGuide(v === 'none' ? '' : v)}
+                        >
+                          <SelectTrigger id="preferredGuide">
+                            <SelectValue placeholder="None (Admin will assign)" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">None (Admin will assign)</SelectItem>
+                            {guideOptions.map((name) => (
+                              <SelectItem key={name} value={name}>{name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <p className="text-xs text-muted-foreground">A licensed local guide will be assigned by admin. You may request a preference, but assignment is subject to availability.</p>
                       </div>
                     </div>
@@ -1351,6 +1463,14 @@ export default function BookingPage() {
                             </div>
                           )}
                         </>
+                      )}
+                      {agreedTruthful && (
+                        <div className="flex items-start space-x-3 p-4 rounded-xl bg-primary/5 border border-primary/30">
+                          <Check className="h-4 w-4 text-primary mt-0.5" />
+                          <p className="text-sm leading-relaxed">
+                            <span className="font-bold text-primary">Sworn declaration completed.</span> You confirmed your details are true and accurate.
+                          </p>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -1640,6 +1760,48 @@ export default function BookingPage() {
         onToggleSmartGuide={setSmartGuideEnabled}
         onClear={handleClearInsights}
       />
+
+      {showSwornPrompt && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <Card className="glass-card w-full max-w-lg border-primary/30">
+            <CardHeader>
+              <CardTitle>Sworn Declaration Required</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Before moving to Agreement, you must declare that all details you entered are true and accurate.
+              </p>
+              <div className="flex items-start space-x-3 p-4 rounded-xl bg-primary/5 border border-primary/30">
+                <Checkbox
+                  id="truthful-floating"
+                  checked={agreedTruthful}
+                  onCheckedChange={(v) => setAgreedTruthful(!!v)}
+                  className="mt-1"
+                />
+                <Label htmlFor="truthful-floating" className="text-sm leading-relaxed cursor-pointer">
+                  <span className="font-bold text-primary">I swear and declare</span> that all information I have provided in this booking form is true and accurate. I understand identities may be verified onsite using valid IDs.
+                </Label>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setShowSwornPrompt(false)}>
+                  Back
+                </Button>
+                <Button
+                  className="flex-1"
+                  disabled={!agreedTruthful}
+                  onClick={() => {
+                    setShowSwornPrompt(false);
+                    setStep(3);
+                  }}
+                >
+                  Continue to Agreement
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
     </div>
   );
 }

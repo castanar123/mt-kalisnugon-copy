@@ -24,6 +24,7 @@ export default function GuideDashboard() {
   const { user } = useAuth();
   const [assignedBookings, setAssignedBookings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showHistoryPanel, setShowHistoryPanel] = useState(false);
 
   /* ── Load bookings assigned to this guide ──
      We match by looking for the guide's name stored in meta.assignedGuide.
@@ -227,27 +228,41 @@ export default function GuideDashboard() {
           )}
         </div>
 
-        {/* Past assignments */}
         {past.length > 0 && (
-          <div>
-            <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-primary" /> Completed Assignments
-            </h2>
-            <div className="space-y-2">
-              {past.map((b) => (
-                <div
-                  key={b.id}
-                  className="flex items-center justify-between gap-4 p-4 rounded-xl bg-secondary/20 border border-border/10 text-sm opacity-70"
-                >
-                  <div className="flex items-center gap-4">
-                    <CheckCircle2 className="h-4 w-4 text-primary" />
-                    <span className="font-medium">{b.booking_date}</span>
-                    <span className="text-muted-foreground">{b.group_size} pax</span>
-                  </div>
-                  <span className="text-xs text-muted-foreground">Completed</span>
+          <Button variant="outline" onClick={() => setShowHistoryPanel(true)}>
+            View Completed Assignment History
+          </Button>
+        )}
+
+        {showHistoryPanel && (
+          <div className="fixed right-4 top-24 z-40 w-[420px] max-w-[92vw]">
+            <Card className="glass-card border-primary/20 shadow-xl">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <CheckCircle2 className="h-5 w-5 text-primary" /> Completed Assignments
+                  </span>
+                  <Button size="sm" variant="ghost" onClick={() => setShowHistoryPanel(false)}>Close</Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2 max-h-[65vh] overflow-y-auto pr-1">
+                  {past.map((b) => (
+                    <div
+                      key={b.id}
+                      className="flex items-center justify-between gap-4 p-3 rounded-xl bg-secondary/20 border border-border/10 text-sm opacity-80"
+                    >
+                      <div className="flex items-center gap-4">
+                        <CheckCircle2 className="h-4 w-4 text-primary" />
+                        <span className="font-medium">{b.booking_date}</span>
+                        <span className="text-muted-foreground">{b.group_size} pax</span>
+                      </div>
+                      <span className="text-xs text-muted-foreground">Completed</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </CardContent>
+            </Card>
           </div>
         )}
       </div>

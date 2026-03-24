@@ -1,0 +1,19 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Payment screenshots upload path used by the client app.
+    // This app currently uploads without Firebase Auth, so create is unauthenticated
+    // but constrained by file type and size.
+    match /payment-screenshots/{imageFile} {
+      allow read: if false;
+      allow create: if request.resource.size < 15 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow update, delete: if false;
+    }
+
+    // Deny everything else by default.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
