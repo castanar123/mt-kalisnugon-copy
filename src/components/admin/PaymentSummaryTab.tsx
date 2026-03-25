@@ -196,6 +196,33 @@ export default function PaymentSummaryTab() {
       'After State': l.after_state ? JSON.stringify(l.after_state) : '',
     }));
 
+    const paymentStatusRows = Object.entries(
+      rows.reduce<Record<string, number>>((acc, r) => {
+        const k = r.paymentStatus || 'unpaid';
+        acc[k] = (acc[k] || 0) + 1;
+        return acc;
+      }, {}),
+    ).map(([status, count]) => ({ 'Payment Status': status, 'Booking Count': count }));
+
+    const paymentMethodRows = Object.entries(
+      rows.reduce<Record<string, number>>((acc, r) => {
+        const k = r.paymentMethod || 'unknown';
+        acc[k] = (acc[k] || 0) + 1;
+        return acc;
+      }, {}),
+    ).map(([method, count]) => ({ 'Payment Method': method, 'Booking Count': count }));
+
+    const summaryRows = [
+      { Metric: 'Generated At', Value: new Date().toLocaleString('en-PH') },
+      { Metric: 'Total Bookings', Value: rows.length },
+      { Metric: 'Total Collected', Value: summary.totalCollected },
+      { Metric: 'Total Due', Value: summary.totalDue },
+      { Metric: 'Outstanding', Value: summary.outstanding },
+      { Metric: 'Trend View', Value: trendMode },
+      { Metric: 'Trend From', Value: customStart || '' },
+      { Metric: 'Trend To', Value: customEnd || '' },
+    ];
+
     const bookingTrendExport = trendData.map((t) => ({
       'Label': t.label,
       'Total Bookings': t.bookings,
@@ -205,8 +232,11 @@ export default function PaymentSummaryTab() {
     }));
 
     exportToExcelMultiSheet([
+      { name: 'Summary', rows: summaryRows },
       { name: 'All Payments', rows: paymentRows },
       { name: 'Booking Trends', rows: bookingTrendExport },
+      { name: 'By Payment Status', rows: paymentStatusRows },
+      { name: 'By Payment Method', rows: paymentMethodRows },
       { name: 'Monthly Summary', rows: monthlyExport },
       { name: 'Yearly Summary', rows: yearlyExport },
       { name: 'Activity Log', rows: logExport },

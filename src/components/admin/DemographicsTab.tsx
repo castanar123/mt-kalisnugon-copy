@@ -56,7 +56,10 @@ export default function DemographicsTab() {
       .not('status', 'eq', 'cancelled')
       .order('booking_date', { ascending: false });
 
-    const rows = data || [];
+    const rows = (data || []).filter((b) => {
+      const meta = parseMeta(b.notes);
+      return Boolean(meta.onsiteStartConfirmed);
+    });
     setRawRows(rows);
 
     const s: DemoStats = {
@@ -168,7 +171,17 @@ export default function DemographicsTab() {
       'City / Province': name, 'Visitor Count': value,
     }));
 
+    const summaryRows = [
+      { Metric: 'Generated At', Value: new Date().toLocaleString('en-PH') },
+      { Metric: 'Dataset Scope', Value: 'Started / onsite-confirmed bookings only' },
+      { Metric: 'Total Visitors', Value: stats.total },
+      { Metric: 'Started Bookings', Value: rawRows.length },
+      { Metric: 'Distinct Nationalities', Value: Object.keys(stats.byNationality).length },
+      { Metric: 'Distinct Origin Cities', Value: Object.keys(stats.byCity).length },
+    ];
+
     exportToExcelMultiSheet([
+      { name: 'Summary', rows: summaryRows },
       { name: 'All Bookings', rows: hikerRows },
       { name: 'Companions', rows: companionRows },
       { name: 'Age Groups', rows: ageRows },
@@ -184,7 +197,7 @@ export default function DemographicsTab() {
         <div>
           <h2 className="text-lg font-semibold">Visitor Demographics</h2>
           <p className="text-sm text-muted-foreground">
-            Age groups, sex, nationality, and origin breakdown of all visitors.
+            Age groups, sex, nationality, and origin breakdown of started/onsite-confirmed visitors only.
           </p>
         </div>
         <div className="flex gap-2">
@@ -210,7 +223,7 @@ export default function DemographicsTab() {
               { label: 'Total Visitors', value: stats.total, icon: Users, color: 'text-primary' },
               { label: 'Nationalities', value: Object.keys(stats.byNationality).length, icon: Globe, color: 'text-sky-500' },
               { label: 'Origin Cities', value: Object.keys(stats.byCity).length, icon: MapPin, color: 'text-amber-500' },
-              { label: 'Total Bookings', value: rawRows.length, icon: BarChart2, color: 'text-purple-500' },
+              { label: 'Started Bookings', value: rawRows.length, icon: BarChart2, color: 'text-purple-500' },
             ].map((s) => (
               <Card key={s.label} className="glass-card">
                 <CardContent className="p-4">

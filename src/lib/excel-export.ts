@@ -7,6 +7,8 @@ export function exportToExcel(
   sheetName = 'Sheet1',
 ): void {
   const ws = XLSX.utils.json_to_sheet(rows);
+  autoFitColumns(ws);
+  if (ws['!ref']) ws['!autofilter'] = { ref: ws['!ref'] };
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
   XLSX.writeFile(wb, `${filename}.xlsx`);
@@ -19,7 +21,10 @@ export function exportToExcelMultiSheet(
 ): void {
   const wb = XLSX.utils.book_new();
   for (const { name, rows } of sheets) {
-    const ws = XLSX.utils.json_to_sheet(rows);
+    const withAtLeastOneRow = rows.length ? rows : [{ Note: 'No data' }];
+    const ws = XLSX.utils.json_to_sheet(withAtLeastOneRow);
+    autoFitColumns(ws);
+    if (ws['!ref']) ws['!autofilter'] = { ref: ws['!ref'] };
     XLSX.utils.book_append_sheet(wb, ws, name);
   }
   XLSX.writeFile(wb, `${filename}.xlsx`);

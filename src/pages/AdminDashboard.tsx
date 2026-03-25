@@ -59,6 +59,8 @@ import {
   FileText,
   DollarSign,
   UserPlus,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { parseMeta, encodeMeta } from '@/lib/bookingMeta';
 import { calculateFees, formatPeso, PAYMENT_METHOD_LABELS, type PaymentMethod } from '@/lib/payments';
@@ -66,6 +68,7 @@ import { addAnnouncement, loadAnnouncements, removeAnnouncement, type AdminAnnou
 import { writeActivityLog } from '@/lib/activity-log';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
+import { loadGuideRatings, renderStars, type GuideRating } from '@/lib/guideRatings';
 import {
   BarChart,
   Bar,
@@ -82,6 +85,7 @@ import TrailRecorder from '@/components/map/TrailRecorder';
 import QRCameraScanner from '@/components/admin/QRCameraScanner';
 import DemographicsTab from '@/components/admin/DemographicsTab';
 import PaymentSummaryTab from '@/components/admin/PaymentSummaryTab';
+import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
 
 const COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#a855f7'];
@@ -99,6 +103,15 @@ const GUIDE_STATUS_STYLES: Record<string, string> = {
   'on-duty': 'bg-sky-500/20 text-sky-600 dark:text-sky-400',
   'off-duty': 'bg-muted text-muted-foreground',
 };
+
+interface HikingExperienceReview {
+  id: string;
+  reviewer_name: string;
+  rating: number;
+  trail_name: string;
+  review_text: string;
+  created_at: string;
+}
 
 const ANNOUNCEMENT_TYPE_STYLES: Record<string, string> = {
   info: 'bg-primary/10 text-primary border-primary/30',
@@ -144,6 +157,11 @@ export default function AdminDashboard() {
   const [startingHike, setStartingHike] = useState(false);
   const [hikeStarted, setHikeStarted] = useState(false);
 
+  /* ── Reviews panel (shown after scan) ── */
+  const [guideRatingForScan, setGuideRatingForScan] = useState<GuideRating | null>(null);
+  const [hikingExperienceReviewsForScan, setHikingExperienceReviewsForScan] = useState<HikingExperienceReview[]>([]);
+  const [reviewsLoadingForScan, setReviewsLoadingForScan] = useState(false);
+
   /* ── QR Scan: Payment recording ── */
   const [scanPayAmount, setScanPayAmount] = useState('');
   const [scanPayMethod, setScanPayMethod] = useState<PaymentMethod>('onsite');
@@ -168,6 +186,8 @@ export default function AdminDashboard() {
   const [guideSearch, setGuideSearch] = useState('');
   const [guideHistoryBookings, setGuideHistoryBookings] = useState<any[]>([]);
   const [guideHistoryLoading, setGuideHistoryLoading] = useState(false);
+  const [calendarDate, setCalendarDate] = useState<Date | undefined>(new Date());
+  const [calendarFloatingOpen, setCalendarFloatingOpen] = useState(false);
   const [newGuideName, setNewGuideName] = useState('');
   const [newGuidePhone, setNewGuidePhone] = useState('');
   const [newGuideTrail, setNewGuideTrail] = useState('');
@@ -247,6 +267,48 @@ export default function AdminDashboard() {
     loadUpcomingCapacities();
     setAnnouncements(loadAnnouncements());
   }, []);
+
+  useEffect(() => {
+    if (!scannedBooking) {
+      setGuideRatingForScan(null);
+      setHikingExperienceReviewsForScan([]);
+      setReviewsLoadingForScan(false);
+      return;
+    }
+
+    const meta = parseMeta(scannedBooking.notes);
+    const assignedGuide = meta.assignedGuide;
+
+    // Guide reviews are stored in localStorage via guideRatings.ts
+    if (assignedGuide) {
+      const ratings = loadGuideRatings();
+      const match = ratings.find((g) => g.guideName.toLowerCase() === assignedGuide.toLowerCase());
+      setGuideRatingForScan(match ?? null);
+    } else {
+      setGuideRatingForScan(null);
+    }
+
+    // Hiking experience reviews are stored in Supabase (reviews table)
+    let active = true;
+    setReviewsLoadingForScan(true);
+    void (async () => {
+      const { data, error } = await supabase
+        .from('reviews')
+        .select('id, reviewer_name, rating, trail_name, review_text, created_at')
+        .eq('is_approved', true)
+        .order('created_at', { ascending: false })
+        .limit(4);
+
+      if (!active) return;
+      if (!error && data) setHikingExperienceReviewsForScan(data as HikingExperienceReview[]);
+      else setHikingExperienceReviewsForScan([]);
+      setReviewsLoadingForScan(false);
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [scannedBooking?.id]);
 
   /* ── Load all bookings (for Bookings tab + Payments tab) ── */
   const loadAllTabBookings = async () => {
@@ -802,6 +864,50 @@ export default function AdminDashboard() {
     unpaid: 'bg-warning/20 text-warning',
   };
 
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const todaysBookings = useMemo(
+    () => allTabBookings.filter((b) => b.booking_date === todayStr && b.status !== 'cancelled'),
+    [allTabBookings, todayStr],
+  );
+
+  const todaysPendingAttention = useMemo(
+    () =>
+      todaysBookings.filter((b) => {
+        const m = parseMeta(b.notes);
+        return b.status !== 'confirmed' || !m.onsiteStartConfirmed;
+      }),
+    [todaysBookings],
+  );
+
+  const bookingsPerDate = useMemo(() => {
+    const map: Record<string, { total: number; pending: number; confirmed: number; started: number }> = {};
+    for (const b of allTabBookings) {
+      if (b.status === 'cancelled') continue;
+      const key = b.booking_date;
+      if (!map[key]) map[key] = { total: 0, pending: 0, confirmed: 0, started: 0 };
+      map[key].total += 1;
+      const m = parseMeta(b.notes);
+      if (m.onsiteStartConfirmed) map[key].started += 1;
+      else if (b.status === 'confirmed') map[key].confirmed += 1;
+      else map[key].pending += 1;
+    }
+    return map;
+  }, [allTabBookings]);
+
+  const bookedDates = useMemo(
+    () => Object.keys(bookingsPerDate).map((d) => new Date(`${d}T00:00:00`)),
+    [bookingsPerDate],
+  );
+
+  const selectedDateKey = calendarDate ? format(calendarDate, 'yyyy-MM-dd') : '';
+  const selectedDateBookings = useMemo(
+    () =>
+      selectedDateKey
+        ? allTabBookings.filter((b) => b.booking_date === selectedDateKey && b.status !== 'cancelled')
+        : [],
+    [allTabBookings, selectedDateKey],
+  );
+
   return (
     <div className="min-h-screen pt-20 pb-12 px-4">
       <div className="container max-w-7xl mx-auto">
@@ -1122,6 +1228,24 @@ export default function AdminDashboard() {
 
           {/* ─────────────────────────────── OVERVIEW TAB ── */}
           <TabsContent value="overview" className="space-y-6">
+            {todaysPendingAttention.length > 0 && (
+              <Card className="glass-card border-amber-500/30">
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-amber-700 dark:text-amber-300">
+                        Reminder: {todaysPendingAttention.length} booking(s) today still need attention
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Pending, unconfirmed, or not-started bookings are listed in the Bookings and QR Check-in tabs.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {statCards.map((s, i) => (
                 <motion.div key={s.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
@@ -1167,6 +1291,75 @@ export default function AdminDashboard() {
                       <Tooltip contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', color: 'hsl(var(--foreground))' }} />
                     </PieChart>
                   </ResponsiveContainer>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid lg:grid-cols-2 gap-6">
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <CalendarCheck className="h-5 w-5 text-primary" /> Booking Calendar
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Calendar
+                    mode="single"
+                    selected={calendarDate}
+                    onSelect={setCalendarDate}
+                    modifiers={{ booked: bookedDates }}
+                    modifiersClassNames={{ booked: 'bg-primary/15 text-primary font-bold border border-primary/30 rounded-md' }}
+                  />
+                  <p className="text-xs text-muted-foreground mt-3">
+                    Highlighted dates have bookings. Select a date to view expected bookings and statuses.
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="text-lg">Expected Bookings on {selectedDateKey || 'Selected Date'}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                    <div className="rounded-lg border border-border/20 bg-secondary/20 p-2">
+                      <p className="text-muted-foreground">Total</p>
+                      <p className="text-lg font-bold">{bookingsPerDate[selectedDateKey]?.total || 0}</p>
+                    </div>
+                    <div className="rounded-lg border border-border/20 bg-secondary/20 p-2">
+                      <p className="text-muted-foreground">Pending</p>
+                      <p className="text-lg font-bold text-amber-500">{bookingsPerDate[selectedDateKey]?.pending || 0}</p>
+                    </div>
+                    <div className="rounded-lg border border-border/20 bg-secondary/20 p-2">
+                      <p className="text-muted-foreground">Confirmed</p>
+                      <p className="text-lg font-bold text-primary">{bookingsPerDate[selectedDateKey]?.confirmed || 0}</p>
+                    </div>
+                    <div className="rounded-lg border border-border/20 bg-secondary/20 p-2">
+                      <p className="text-muted-foreground">Started</p>
+                      <p className="text-lg font-bold text-emerald-500">{bookingsPerDate[selectedDateKey]?.started || 0}</p>
+                    </div>
+                  </div>
+                  <div className="max-h-[240px] overflow-y-auto space-y-2 pr-1">
+                    {selectedDateBookings.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-6">No bookings on this date.</p>
+                    ) : (
+                      selectedDateBookings.map((b) => {
+                        const meta = parseMeta(b.notes);
+                        const started = !!meta.onsiteStartConfirmed;
+                        return (
+                          <div key={b.id} className="rounded-lg border border-border/20 p-3 text-sm bg-secondary/10">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="font-semibold truncate">{meta.fullName || b.emergency_contact_name || '—'}</p>
+                              <Badge className={started ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' : BOOKING_STATUS_STYLE[b.status] || ''}>
+                                {started ? 'started' : b.status}
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground">{b.group_size} pax • {b.id.slice(0, 8)}…</p>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -1682,6 +1875,74 @@ export default function AdminDashboard() {
                         </div>
                       )}
 
+                      {/* ── Reviews (guide + hiking experience) ── */}
+                      <div className="rounded-xl border border-border/30 bg-secondary/10 p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold">Guide & Hiking Reviews</p>
+                            <p className="text-xs text-muted-foreground">Recent ratings for this booking.</p>
+                          </div>
+                          {reviewsLoadingForScan ? (
+                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                          ) : (
+                            <span className="text-[11px] text-muted-foreground">On</span>
+                          )}
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Guide Review</p>
+                          {meta.assignedGuide ? (
+                            guideRatingForScan ? (
+                              <div className="rounded-lg border border-border/10 bg-secondary/30 p-3 space-y-2">
+                                <div className="flex items-center gap-3 flex-wrap">
+                                  <span className="text-lg font-bold text-primary">{guideRatingForScan.avgRating.toFixed(1)}</span>
+                                  <span className="text-amber-500 text-sm leading-none" aria-hidden="true">{renderStars(guideRatingForScan.avgRating)}</span>
+                                  <span className="text-xs text-muted-foreground">({guideRatingForScan.reviewCount} reviews)</span>
+                                </div>
+                                {guideRatingForScan.recentReviews.slice(0, 2).map((r, idx) => (
+                                  <div key={`${r.hikerName}_${r.date}_${idx}`} className="space-y-0.5">
+                                    <p className="text-xs font-semibold">
+                                      {r.hikerName} <span className="text-[11px] font-normal text-muted-foreground">({r.date})</span>
+                                    </p>
+                                    <p className="text-xs text-muted-foreground leading-relaxed">"{r.comment}"</p>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">No guide reviews yet for {meta.assignedGuide}.</p>
+                            )
+                          ) : (
+                            <p className="text-xs text-muted-foreground">Assigned guide not yet available.</p>
+                          )}
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Hiking Experience</p>
+                          {reviewsLoadingForScan ? (
+                            <p className="text-xs text-muted-foreground">Loading reviews...</p>
+                          ) : hikingExperienceReviewsForScan.length > 0 ? (
+                            <div className="space-y-2">
+                              {hikingExperienceReviewsForScan.slice(0, 3).map((r) => (
+                                <div key={r.id} className="rounded-lg border border-border/10 bg-secondary/30 p-3 space-y-1.5">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <p className="text-xs font-semibold">{r.reviewer_name}</p>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-amber-500 text-xs" aria-hidden="true">
+                                        {'★'.repeat(Math.round(r.rating))}{'☆'.repeat(5 - Math.round(r.rating))}
+                                      </span>
+                                      <span className="text-[11px] text-muted-foreground">{Math.round(r.rating)}/5</span>
+                                    </div>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground leading-relaxed">"{r.review_text}"</p>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">No approved hiking reviews yet.</p>
+                          )}
+                        </div>
+                      </div>
+
                       {/* ── Payment Recording (only here) ── */}
                       <div className="rounded-xl border border-border/30 bg-secondary/10 p-4 space-y-3">
                         <div className="flex items-center justify-between">
@@ -1796,6 +2057,82 @@ export default function AdminDashboard() {
             <DemographicsTab />
           </TabsContent>
         </Tabs>
+      </div>
+
+      {/* Floating collapsible booking calendar */}
+      <div className="fixed right-4 bottom-4 z-50 w-[360px] max-w-[92vw]">
+        <Card className="glass-card border-primary/30 shadow-xl overflow-hidden">
+          <button
+            onClick={() => setCalendarFloatingOpen((v) => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 bg-primary/10 hover:bg-primary/15 transition-colors"
+            aria-expanded={calendarFloatingOpen}
+          >
+            <span className="text-sm font-semibold flex items-center gap-2">
+              <CalendarCheck className="h-4 w-4 text-primary" />
+              Booking Calendar
+            </span>
+            {calendarFloatingOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+          </button>
+
+          {calendarFloatingOpen && (
+            <CardContent className="p-3 space-y-3 max-h-[70vh] overflow-y-auto">
+              <Calendar
+                mode="single"
+                selected={calendarDate}
+                onSelect={setCalendarDate}
+                className="w-full"
+                classNames={{
+                  months: 'flex flex-col',
+                  month: 'w-full',
+                  table: 'w-full',
+                  head_row: 'grid grid-cols-7',
+                  row: 'grid grid-cols-7 mt-2',
+                  cell: 'h-10',
+                }}
+                modifiers={{ booked: bookedDates }}
+                modifiersClassNames={{ booked: 'bg-primary/15 text-primary font-bold border border-primary/30 rounded-md' }}
+              />
+              <div className="grid grid-cols-4 gap-1.5 text-center text-[10px]">
+                <div className="rounded-lg border border-border/20 bg-secondary/20 p-1.5">
+                  <p className="text-muted-foreground">Total</p>
+                  <p className="text-sm font-bold">{bookingsPerDate[selectedDateKey]?.total || 0}</p>
+                </div>
+                <div className="rounded-lg border border-border/20 bg-secondary/20 p-1.5">
+                  <p className="text-muted-foreground">Pending</p>
+                  <p className="text-sm font-bold text-amber-500">{bookingsPerDate[selectedDateKey]?.pending || 0}</p>
+                </div>
+                <div className="rounded-lg border border-border/20 bg-secondary/20 p-1.5">
+                  <p className="text-muted-foreground">Confirmed</p>
+                  <p className="text-sm font-bold text-primary">{bookingsPerDate[selectedDateKey]?.confirmed || 0}</p>
+                </div>
+                <div className="rounded-lg border border-border/20 bg-secondary/20 p-1.5">
+                  <p className="text-muted-foreground">Started</p>
+                  <p className="text-sm font-bold text-emerald-500">{bookingsPerDate[selectedDateKey]?.started || 0}</p>
+                </div>
+              </div>
+              <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-1">
+                {selectedDateBookings.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-3">No bookings on this date.</p>
+                ) : (
+                  selectedDateBookings.map((b) => {
+                    const meta = parseMeta(b.notes);
+                    const started = !!meta.onsiteStartConfirmed;
+                    return (
+                      <div key={b.id} className="rounded-lg border border-border/20 p-2 text-xs bg-secondary/10">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="font-semibold truncate">{meta.fullName || b.emergency_contact_name || '—'}</p>
+                          <Badge className={started ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' : BOOKING_STATUS_STYLE[b.status] || ''}>
+                            {started ? 'started' : b.status}
+                          </Badge>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </CardContent>
+          )}
+        </Card>
       </div>
     </div>
   );
